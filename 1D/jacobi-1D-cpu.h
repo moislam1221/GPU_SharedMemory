@@ -57,7 +57,9 @@ int jacobiCpuIterationCount(const float * initX, const float * rhs, int nGrids, 
         float * tmp = x0; x0 = x1; x1 = tmp;
         iIter++;
         residual = residual1DPoisson(x0, rhs, nGrids);
-        printf("The residual at step %d is %f\n", iIter, residual);
+        if (iIter % 1000 == 0) {
+            printf("CPU: The residual at step %d is %f\n", iIter, residual);
+        }
     }
     int nIters = iIter;
     delete[] x1;
