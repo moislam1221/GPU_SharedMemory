@@ -14,6 +14,7 @@
 #include <time.h>
 #include <string.h>
 #include <utility>
+#include <time.h>
 
 // HEADER FILES
 #include "Helper/jacobi.h"
@@ -25,7 +26,7 @@ int main(int argc, char *argv[])
 {
     // INPUTS
     const int nDim = 1024; //atoi(argv[1]); 
-    const int threadsPerBlock = 32; //atoi(argv[2]); 
+    const int threadsPerBlock = 128; //atoi(argv[2]); 
     const float TOL = 1.0; //atoi(argv[4]);
 
     // INITIALIZE ARRAYS
@@ -56,7 +57,15 @@ int main(int argc, char *argv[])
     cpuJacobiTime = cpuJacobiTime * (1e3); // Convert to ms
 
     // GPU - JACOBI
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start, 0);
     float * solutionJacobiGpu = jacobiGpu(initX, rhs, nGrids, gpuIterations, threadsPerBlock);
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    float gpuJacobiTime;
+    cudaEventElapsedTime(&gpuJacobiTime, start, stop);
     
     // PRINT SOLUTION
     for (int i = 0; i < nGrids; i++) {
@@ -76,6 +85,7 @@ int main(int argc, char *argv[])
     
     // Print out time for cpu, classic gpu, and swept gpu approaches
     printf("Time needed for the Jacobi CPU: %f ms\n", cpuJacobiTime);
+    printf("Time needed for the Jacobi GPU: %f ms\n", gpuJacobiTime);
     printf("======================================================\n");
 
     // Compute the residual of the resulting solution (|b-Ax|)

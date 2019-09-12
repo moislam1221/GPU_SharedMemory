@@ -24,6 +24,9 @@ float * jacobiCpu(const float * initX, const float * rhs, int nGrids, int nIters
     float * x1 = new float[nGrids];
     memcpy(x0, initX, sizeof(float) * nGrids);
     memcpy(x1, initX, sizeof(float) * nGrids);
+
+    float elapsedTime = 0.0f;
+    clock_t start = clock();
     for (int iIter = 0; iIter < nIters; ++ iIter) {
         for (int iGrid = 1; iGrid < nGrids-1; ++iGrid) {
             float leftX = x0[iGrid - 1];
@@ -32,8 +35,11 @@ float * jacobiCpu(const float * initX, const float * rhs, int nGrids, int nIters
         }
         float * tmp = x0; x0 = x1; x1 = tmp;
     }
-    float residual = residual1DPoisson(x0, rhs, nGrids);
-    // printf("The residual is %f\n", residual);
+    clock_t end = clock();
+    elapsedTime = (float)(end - start) * 1000 / CLOCKS_PER_SEC;
+    
+    printf("CPU Elapsed Time is %f\n", elapsedTime);
+
     delete[] x1;
     return x0;
 }

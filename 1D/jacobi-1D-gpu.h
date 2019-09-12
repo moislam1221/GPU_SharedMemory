@@ -46,13 +46,22 @@ float * jacobiGpu(const float * initX, const float * rhs, const int nGrids, cons
 
     // Run the classic iteration for prescribed number of iterations
     int nBlocks = (int)ceil(nGrids / (float)threadsPerBlock);
-    
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start, 0);   
     for (int iIter = 0; iIter < nIters; ++iIter) {
 	// Jacobi iteration on the GPU
         _jacobiGpuClassicIteration<<<nBlocks, threadsPerBlock>>>(
                 x1Gpu, x0Gpu, rhsGpu, nGrids, dx); 
         float * tmp = x0Gpu; x0Gpu = x1Gpu; x1Gpu = tmp;
     }
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    float elapsedTime;
+    cudaEventElapsedTime(&elapsedTime, start, stop);
+    printf("GPU Time is %f\n", elapsedTime);   
 
     // Write solution from GPU to CPU variable
     float * solution = new float[nGrids];
