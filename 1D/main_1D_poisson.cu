@@ -21,6 +21,7 @@
 #include "Helper/residual.h"
 #include "jacobi-1D-cpu.h"
 #include "jacobi-1D-gpu.h"
+#include "jacobi-1D-shared.h"
 
 int main(int argc, char *argv[])
 {
@@ -48,6 +49,7 @@ int main(int argc, char *argv[])
     // OBTAIN NUMBER OF ITERATIONS NECESSARY TO ACHIEVE TOLERANCE FOR EACH METHOD
     int cpuIterations = jacobiCpuIterationCount(initX, rhs, nGrids, TOL);
     int gpuIterations = jacobiGpuIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock);
+    int sharedCycles = jacobiSharedIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock);
     
     // CPU - JACOBI
     clock_t cpuJacobiStartTime = clock();
@@ -67,6 +69,17 @@ int main(int argc, char *argv[])
     float gpuJacobiTime;
     cudaEventElapsedTime(&gpuJacobiTime, start, stop);
     
+    // SHARED - JACOBI
+    cudaEvent_t start_sh, stop_sh;
+    cudaEventCreate(&start_sh);
+    cudaEventCreate(&stop_sh);
+    cudaEventRecord(start_sh, 0);
+    float * solutionJacobiShared = jacobiShared(initX, rhs, nGrids, sharedCycles, threadsPerBlock);
+    cudaEventRecord(stop_sh, 0);
+    cudaEventSynchronize(stop_sh);
+    float sharedJacobiTime;
+    cudaEventElapsedTime(&sharedJacobiTime, start_sh, stop_sh);
+    
     // PRINT SOLUTION
     for (int i = 0; i < nGrids; i++) {
         printf("Grid %d = %f %f\n", i, solutionJacobiCpu[i], solutionJacobiGpu[i]);
@@ -82,23 +95,28 @@ int main(int argc, char *argv[])
     // Print out number of iterations needed for each method
     printf("Number of Iterations needed for Jacobi CPU: %d \n", cpuIterations);
     printf("Number of Iterations needed for Jacobi GPU: %d \n", gpuIterations);
+    printf("Number of Cycles needed for Jacobi Shared: %d (%d) \n", sharedCycles, threadsPerBlock/2);
     
     // Print out time for cpu, classic gpu, and swept gpu approaches
     printf("Time needed for the Jacobi CPU: %f ms\n", cpuJacobiTime);
     printf("Time needed for the Jacobi GPU: %f ms\n", gpuJacobiTime);
+    printf("Time needed for the Jacobi GPU: %f ms\n", sharedJacobiTime);
     printf("======================================================\n");
 
     // Compute the residual of the resulting solution (|b-Ax|)
     float residualJacobiCpu = residual1DPoisson(solutionJacobiCpu, rhs, nGrids);
     float residualJacobiGpu = residual1DPoisson(solutionJacobiGpu, rhs, nGrids);
+    float residualJacobiShared = residual1DPoisson(solutionJacobiShared, rhs, nGrids);
     printf("Residual of the Jacobi CPU solution is %f\n", residualJacobiCpu);
     printf("Residual of the Jacobi GPU solution is %f\n", residualJacobiGpu);
+    printf("Residual of the Jacobi Shared solution is %f\n", residualJacobiShared);
 
     // FREE MEMORY
     delete[] initX;
     delete[] rhs;
     delete[] solutionJacobiCpu;
     delete[] solutionJacobiGpu;
+    delete[] solutionJacobiShared;
     
     return 0;
 }
