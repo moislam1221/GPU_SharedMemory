@@ -29,6 +29,7 @@ int main(int argc, char *argv[])
     const int nDim = 1024; //atoi(argv[1]); 
     const int threadsPerBlock = 128; //atoi(argv[2]); 
     const float TOL = 1.0; //atoi(argv[4]);
+    const int OVERLAP = 0;
 
     // INITIALIZE ARRAYS
     int nGrids = nDim + 2;
@@ -49,7 +50,7 @@ int main(int argc, char *argv[])
     // OBTAIN NUMBER OF ITERATIONS NECESSARY TO ACHIEVE TOLERANCE FOR EACH METHOD
     int cpuIterations = jacobiCpuIterationCount(initX, rhs, nGrids, TOL);
     int gpuIterations = jacobiGpuIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock);
-    int sharedCycles = jacobiSharedIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock);
+    int sharedCycles = jacobiSharedIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP);
     
     // CPU - JACOBI
     clock_t cpuJacobiStartTime = clock();
@@ -74,7 +75,7 @@ int main(int argc, char *argv[])
     cudaEventCreate(&start_sh);
     cudaEventCreate(&stop_sh);
     cudaEventRecord(start_sh, 0);
-    float * solutionJacobiShared = jacobiShared(initX, rhs, nGrids, sharedCycles, threadsPerBlock);
+    float * solutionJacobiShared = jacobiShared(initX, rhs, nGrids, sharedCycles, threadsPerBlock, OVERLAP);
     cudaEventRecord(stop_sh, 0);
     cudaEventSynchronize(stop_sh);
     float sharedJacobiTime;
