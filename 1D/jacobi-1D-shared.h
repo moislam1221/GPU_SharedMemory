@@ -1,13 +1,12 @@
 __device__
-void __jacobiUpdateKernel(const float * rhsBlock, const int nGrids, const int nSub, const int OVERLAP)
+void __jacobiUpdateKernel(const float * rhsBlock, const int nGrids, const int nSub, const int OVERLAP, const int subIterations)
 {
     extern __shared__ float sharedMemory[];
     float * x0 = sharedMemory, * x1 = sharedMemory + nSub;
 
-    const int numIterations = blockDim.x / 2;
     const float dx = 1.0 / (nGrids - 1);
 
-    for (int k = 0; k < numIterations; k++) {
+    for (int k = 0; k < subIterations; k++) {
         int i = threadIdx.x + 1;
         int I = blockIdx.x * (blockDim.x - OVERLAP)+ i;
         if (I < nGrids-1) {
@@ -22,7 +21,7 @@ void __jacobiUpdateKernel(const float * rhsBlock, const int nGrids, const int nS
 }
 
 __global__
-void _jacobiUpdate(float * x0Gpu, const float * rhsGpu, const int nGrids, const int OVERLAP)
+void _jacobiUpdate(float * x0Gpu, const float * rhsGpu, const int nGrids, const int OVERLAP, const int subIterations)
 {
     // Move to shared memory
     extern __shared__ float sharedMemory[];
@@ -50,7 +49,7 @@ void _jacobiUpdate(float * x0Gpu, const float * rhsGpu, const int nGrids, const 
     __syncthreads();
 
     // STEP 2 - UPDATE ALL INNER POINTS IN EACH BLOCK
-    __jacobiUpdateKernel(rhsBlock, nGrids, nPerSubdomain, OVERLAP);
+    __jacobiUpdateKernel(rhsBlock, nGrids, nPerSubdomain, OVERLAP, subIterations);
 
 
     // STEP 3 - MOVE ALL VALUES FROM SHARED MEMORY BACK TO GLOBAL MEMORY
@@ -80,7 +79,7 @@ void _jacobiUpdate(float * x0Gpu, const float * rhsGpu, const int nGrids, const 
     __syncthreads();
 }
 
-float * jacobiShared(const float * initX, const float * rhs, const int nGrids, const int cycles, const int threadsPerBlock, const int OVERLAP)
+float * jacobiShared(const float * initX, const float * rhs, const int nGrids, const int cycles, const int threadsPerBlock, const int OVERLAP, const int subIterations)
 {
     // Number of grid points handled by a subdomain
     const int nSub = threadsPerBlock + 2;
@@ -102,7 +101,7 @@ float * jacobiShared(const float * initX, const float * rhs, const int nGrids, c
 
     // Call kernel to allocate to sharedmemory and update points
     for (int step = 0; step < cycles; step++) {
-        _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x0Gpu, rhsGpu, nGrids, OVERLAP);
+        _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x0Gpu, rhsGpu, nGrids, OVERLAP, subIterations);
     }
 
     float * solution = new float[nGrids];
@@ -116,7 +115,7 @@ float * jacobiShared(const float * initX, const float * rhs, const int nGrids, c
     return solution;
 }
 
-int jacobiSharedIterationCount(const float * initX, const float * rhs, const int nGrids, const int TOL, const int threadsPerBlock, const int OVERLAP)
+int jacobiSharedIterationCount(const float * initX, const float * rhs, const int nGrids, const int TOL, const int threadsPerBlock, const int OVERLAP, const int subIterations)
 {
     // Number of grid points handled by a subdomain
     const int nSub = threadsPerBlock + 2;
@@ -141,7 +140,7 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
     int nIters = 0;
     float * solution = new float[nGrids];
     while (residual > TOL) {
-        _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x0Gpu, rhsGpu, nGrids, OVERLAP);
+        _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x0Gpu, rhsGpu, nGrids, OVERLAP, subIterations);
          nIters++;
          cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
          residual = residual1DPoisson(solution, rhs, nGrids);

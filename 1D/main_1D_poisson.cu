@@ -34,6 +34,7 @@ int main(int argc, char *argv[])
     const int threadsPerBlock = 32; //atoi(argv[2]); 
     const float TOL = 1.0; //atoi(argv[4]);
     const int OVERLAP = 0;
+    const int subIterations = threadsPerBlock / 2;
     std::string CPU_FILE_NAME = "RESULTS/CPU_N1024_TOL1.txt";
     std::string GPU_FILE_NAME = "RESULTS/GPU_N1024_TOL1.txt";
     std::string SHARED_FILE_NAME = "RESULTS/SHARED_N1024_TOL1.txt";
@@ -82,12 +83,12 @@ int main(int argc, char *argv[])
  
     // SHARED - JACOBI
 #ifdef RUN_SHARED_FLAG
-	int sharedCycles = jacobiSharedIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP);
+	int sharedCycles = jacobiSharedIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, subIterations);
 	cudaEvent_t start_sh, stop_sh;
 	cudaEventCreate(&start_sh);
 	cudaEventCreate(&stop_sh);
 	cudaEventRecord(start_sh, 0);
-	float * solutionJacobiShared = jacobiShared(initX, rhs, nGrids, sharedCycles, threadsPerBlock, OVERLAP);
+	float * solutionJacobiShared = jacobiShared(initX, rhs, nGrids, sharedCycles, threadsPerBlock, OVERLAP, subIterations);
 	cudaEventRecord(stop_sh, 0);
 	cudaEventSynchronize(stop_sh);
 	float sharedJacobiTime;
