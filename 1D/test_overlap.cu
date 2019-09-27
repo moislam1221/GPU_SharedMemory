@@ -30,6 +30,7 @@ int main(int argc, char *argv[])
     const int threadsPerBlock = 32; //atoi(argv[2]); 
     const float TOL = 1.0; //atoi(argv[4]);
     const int nIters = 20;
+    const int subIterations = threadsPerBlock/2; //atoi(argv[2]); 
     std::string FILENAME = "OVERLAP_RESULTS/N1024_TOL1_TPB32.txt";
 
     // INITIALIZE ARRAYS
@@ -52,7 +53,7 @@ int main(int argc, char *argv[])
     int numIterations = (threadsPerBlock-2)/2;
     
     // NECESSARY CONTAINERS
-    int * sharedCycles = new int[numIterations];
+    int * sharedCycles = new int[subIterations];
     float * sharedJacobiTimeArray = new float[numIterations];
     float * residualJacobiShared = new float[numIterations];
     float * solutionJacobiShared = new float[nGrids];
@@ -68,11 +69,11 @@ int main(int argc, char *argv[])
     for (int i = 0; i <= numIterations; i++) {
         // OBTAIN NUMBER OF CYCLES TO CONVERGE FOR GIVEN OVERLAP
         OVERLAP = 2*i;
-        sharedCycles[i] = jacobiSharedIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP);
+        sharedCycles[i] = jacobiSharedIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, subIterations);
         for (int iter = 0; iter < nIters; iter++) {
             // GET FINAL SOLUTION
 			cudaEventRecord(start_sh, 0);
-			solutionJacobiShared = jacobiShared(initX, rhs, nGrids, sharedCycles[i], threadsPerBlock, OVERLAP);
+			solutionJacobiShared = jacobiShared(initX, rhs, nGrids, sharedCycles[i], threadsPerBlock, OVERLAP, subIterations);
 			// OBTAIN FINAL TIMES REQUIRED
 			cudaEventRecord(stop_sh, 0);
 			cudaEventSynchronize(stop_sh);
