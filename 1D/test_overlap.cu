@@ -19,20 +19,29 @@
 // HEADER FILES
 #include "Helper/jacobi.h"
 #include "Helper/residual.h"
+#include "Helper/setGPU.h"
 #include "jacobi-1D-shared.h"
 
 // IDEA: For N = 1024, create a plot of convergence time as the overlap points increase
 
 int main(int argc, char *argv[])
 {
-    // INPUTS
+    // INPUTS ///////////////////////////////////////////////////////////////
+    // SET CUDA DEVICE TO USE (IMPORTANT FOR ENDEAVOUR WHICH HAS 2!)
+    // NAVIER-STOKES GPUs: "Quadro K420"
+    // ENDEAVOUR GPUs: "TITAN V" OR "GeForce GTX 1080 Ti"
+    std::string gpuToUse = "Quadro K420";
+    setGPU(gpuToUse);
+
+    // INPUTS AND OUTPUT FILE NAMES
     const int nDim = 1024; //atoi(argv[1]); 
     const int threadsPerBlock = 32; //atoi(argv[2]); 
     const float TOL = 1.0; //atoi(argv[4]);
-    const int nIters = 20;
+    const int nIters = 2; // 20
     const int subIterations = threadsPerBlock/2; //atoi(argv[2]); 
-    std::string FILENAME = "OVERLAP_RESULTS/N1024_TOL1_TPB32.txt";
-
+    std::string FILENAME = "OVERLAP_RESULTS/N1024_TOL1_TPB32_DUMMY.txt";
+    /////////////////////////////////////////////////////////////////////////
+ 
     // INITIALIZE ARRAYS
     int nGrids = nDim + 2;
     float * initX = new float[nGrids];
@@ -83,6 +92,7 @@ int main(int argc, char *argv[])
         }
         sharedJacobiTimeArray[i] = totalTime / nIters;
         residualJacobiShared[i] = residual1DPoisson(solutionJacobiShared, rhs, nGrids);
+        printf("Residual is %f\n", residualJacobiShared[i]);
         printf("FINISHED OVERLAP = %d/%d CASE (N = %d, tpb = %d)\n", OVERLAP, threadsPerBlock-2, nDim, threadsPerBlock);
         totalTime = 0.0;
     }    
@@ -90,6 +100,7 @@ int main(int argc, char *argv[])
     // PRINTOUT
     // Print parameters of the problem to screen
     printf("===============INFORMATION============================\n");
+    printf("GPU Name: %s\n", gpuToUse.c_str());
     printf("Number of unknowns: %d\n", nDim);
     printf("Threads Per Block: %d\n", threadsPerBlock);
     printf("======================================================\n");

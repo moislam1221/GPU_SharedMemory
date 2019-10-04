@@ -141,12 +141,12 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
     float * solution = new float[nGrids];
     while (residual > TOL) {
         _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x0Gpu, rhsGpu, nGrids, OVERLAP, subIterations);
-         nIters++;
-         cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
-         residual = residual1DPoisson(solution, rhs, nGrids);
-         if (nIters % 100 == 0) {
-             printf("Shared: The residual is %f\n", residual);
-         }
+        nIters++;
+        cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
+        residual = residual1DPoisson(solution, rhs, nGrids);
+        if (nIters % 1000 == 0) {
+            printf("Shared: The residual is %f\n", residual);
+        }
     }
 
     // Clean up

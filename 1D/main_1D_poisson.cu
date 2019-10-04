@@ -19,25 +19,34 @@
 // HEADER FILES
 #include "Helper/jacobi.h"
 #include "Helper/residual.h"
+#include "Helper/setGPU.h"
 #include "jacobi-1D-cpu.h"
 #include "jacobi-1D-gpu.h"
 #include "jacobi-1D-shared.h"
 
-#define RUN_CPU_FLAG 1
-#define RUN_GPU_FLAG 1
+// #define RUN_CPU_FLAG 1
+// #define RUN_GPU_FLAG 1
 #define RUN_SHARED_FLAG 1
 
 int main(int argc, char *argv[])
 {
+    // INPUTS ///////////////////////////////////////////////////////////////
+    // SET CUDA DEVICE TO USE (IMPORTANT FOR ENDEAVOUR WHICH HAS 2!)
+    // NAVIER-STOKES GPUs: "Quadro K420"
+    // ENDEAVOUR GPUs: "TITAN V" OR "GeForce GTX 1080 Ti"
+    std::string gpuToUse = "Quadro K420"; 
+    setGPU(gpuToUse);
+
     // INPUTS AND OUTPUT FILE NAMES
     const int nDim = 1024; //atoi(argv[1]); 
     const int threadsPerBlock = 32; //atoi(argv[2]); 
     const float TOL = 1.0; //atoi(argv[4]);
-    const int OVERLAP = 0;
+    const int OVERLAP = 30;
     const int subIterations = threadsPerBlock / 2;
     std::string CPU_FILE_NAME = "RESULTS/CPU_N1024_TOL1.txt";
     std::string GPU_FILE_NAME = "RESULTS/GPU_N1024_TOL1.txt";
     std::string SHARED_FILE_NAME = "RESULTS/SHARED_N1024_TOL1.txt";
+    /////////////////////////////////////////////////////////////////////////
 
     // INITIALIZE ARRAYS
     int nGrids = nDim + 2;
@@ -106,6 +115,7 @@ int main(int argc, char *argv[])
    
     // Print parameters of the problem to screen
     printf("===============INFORMATION============================\n");
+    printf("GPU Name: %s\n", gpuToUse.c_str());
     printf("Number of unknowns: %d\n", nDim);
     printf("Threads Per Block: %d\n", threadsPerBlock);
     printf("======================================================\n");
@@ -129,9 +139,9 @@ int main(int argc, char *argv[])
 	printf("Time needed for the Jacobi GPU: %f ms\n", gpuJacobiTime);
 	printf("Residual of the Jacobi GPU solution is %f\n", gpuJacobiResidual);
 	std::ofstream gpuResults;
-	cpuResults.open(GPU_FILE_NAME, std::ios::app);
-	cpuResults << nDim << " " << threadsPerBlock << " " << gpuIterations << " " << gpuJacobiTime << " " << gpuJacobiResidual << "\n";
-	cpuResults.close();
+	gpuResults.open(GPU_FILE_NAME, std::ios::app);
+	gpuResults << nDim << " " << threadsPerBlock << " " << gpuIterations << " " << gpuJacobiTime << " " << gpuJacobiResidual << "\n";
+	gpuResults.close();
 #endif
 
     // SHARED RESULTS
@@ -141,9 +151,9 @@ int main(int argc, char *argv[])
 	printf("Time needed for the Jacobi Shared: %f ms\n", sharedJacobiTime);
 	printf("Residual of the Jacobi Shared solution is %f\n", sharedJacobiResidual);
 	std::ofstream sharedResults;
-	cpuResults.open(SHARED_FILE_NAME, std::ios::app);
-	cpuResults << nDim << " " << threadsPerBlock << " " << sharedCycles << " " << sharedJacobiTime << " " << sharedJacobiResidual << "\n";
-	cpuResults.close();
+	sharedResults.open(SHARED_FILE_NAME, std::ios::app);
+	sharedResults << nDim << " " << threadsPerBlock << " " << sharedCycles << " " << sharedJacobiTime << " " << sharedJacobiResidual << "\n";
+	sharedResults.close();
 #endif
 
     // FREE MEMORY

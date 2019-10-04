@@ -19,18 +19,27 @@
 // HEADER FILES
 #include "Helper/jacobi.h"
 #include "Helper/residual.h"
+#include "Helper/setGPU.h"
 #include "jacobi-1D-shared.h"
 
 // IDEA: For N = 1024, create a plot of convergence time as the overlap points increase
 
 int main(int argc, char *argv[])
 {
-    // INPUTS
+    // INPUTS ///////////////////////////////////////////////////////////////
+    // SET CUDA DEVICE TO USE (IMPORTANT FOR ENDEAVOUR WHICH HAS 2!)
+    // NAVIER-STOKES GPUs: "Quadro K420"
+    // ENDEAVOUR GPUs: "TITAN V" OR "GeForce GTX 1080 Ti"
+    std::string gpuToUse = "Quadro K420";
+    setGPU(gpuToUse);
+
+    // INPUTS AND OUTPUT FILE NAMES
     const int nDim = 1024; //atoi(argv[1]); 
     const int threadsPerBlock = 32; //atoi(argv[2]); 
     const float TOL = 1.0; //atoi(argv[4]);
     const int nIters = 20;
     std::string FILENAME = "SUBITERATION_RESULTS/N1024_TOL1_TPB32.txt";
+    /////////////////////////////////////////////////////////////////////////
 
     // INITIALIZE ARRAYS
     int nGrids = nDim + 2;
@@ -70,6 +79,7 @@ int main(int argc, char *argv[])
     // PRINTOUT
     // Print parameters of the problem to screen
     printf("===============INFORMATION============================\n");
+    printf("GPU Name: %s\n", gpuToUse.c_str());
     printf("Number of unknowns: %d\n", nDim);
     printf("Threads Per Block: %d\n", threadsPerBlock);
     printf("SubIteration Values to Explore: [%d %d]\n", threadsPerBlock/4, threadsPerBlock * threadsPerBlock/2);
