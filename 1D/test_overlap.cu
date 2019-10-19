@@ -37,9 +37,9 @@ int main(int argc, char *argv[])
     const int nDim = 1024; //atoi(argv[1]); 
     const int threadsPerBlock = 32; //atoi(argv[2]); 
     const float TOL = 1.0; //atoi(argv[4]);
-    const int nIters = 2; // 20
+    const int trials = 20; // 20
     const int subIterations = threadsPerBlock/2; //atoi(argv[2]); 
-    std::string FILENAME = "OVERLAP_RESULTS/N1024_TOL1_TPB32_DUMMY.txt";
+    std::string FILENAME = "OVERLAP_RESULTS/N1024_TOL1_TPB32.txt";
     /////////////////////////////////////////////////////////////////////////
  
     // INITIALIZE ARRAYS
@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
         // OBTAIN NUMBER OF CYCLES TO CONVERGE FOR GIVEN OVERLAP
         OVERLAP = 2*i;
         sharedCycles[i] = jacobiSharedIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, subIterations);
-        for (int iter = 0; iter < nIters; iter++) {
+        for (int iter = 0; iter < trials; iter++) {
             // GET FINAL SOLUTION
 			cudaEventRecord(start_sh, 0);
 			solutionJacobiShared = jacobiShared(initX, rhs, nGrids, sharedCycles[i], threadsPerBlock, OVERLAP, subIterations);
@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
 			totalTime = totalTime + sharedJacobiTime;
             printf("FINISHED ITERATION %d\n", iter);
         }
-        sharedJacobiTimeArray[i] = totalTime / nIters;
+        sharedJacobiTimeArray[i] = totalTime / trials;
         residualJacobiShared[i] = residual1DPoisson(solutionJacobiShared, rhs, nGrids);
         printf("Residual is %f\n", residualJacobiShared[i]);
         printf("FINISHED OVERLAP = %d/%d CASE (N = %d, tpb = %d)\n", OVERLAP, threadsPerBlock-2, nDim, threadsPerBlock);
