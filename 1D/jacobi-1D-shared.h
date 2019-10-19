@@ -115,7 +115,7 @@ float * jacobiShared(const float * initX, const float * rhs, const int nGrids, c
     return solution;
 }
 
-int jacobiSharedIterationCount(const float * initX, const float * rhs, const int nGrids, const int TOL, const int threadsPerBlock, const int OVERLAP, const int subIterations)
+int jacobiSharedIterationCount(const float * initX, const float * rhs, const int nGrids, const float TOL, const int threadsPerBlock, const int OVERLAP, const int subIterations)
 {
     // Number of grid points handled by a subdomain
     const int nSub = threadsPerBlock + 2;
@@ -136,7 +136,7 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
     const int sharedBytes = 2 * nSub * sizeof(float);
 
     // Call kernel to allocate to sharedmemory and update points
-    float residual = 100.0;
+    float residual = 1000000000000.0;
     int nIters = 0;
     float * solution = new float[nGrids];
     while (residual > TOL) {

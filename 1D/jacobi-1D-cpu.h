@@ -25,8 +25,6 @@ float * jacobiCpu(const float * initX, const float * rhs, int nGrids, int nIters
     memcpy(x0, initX, sizeof(float) * nGrids);
     memcpy(x1, initX, sizeof(float) * nGrids);
 
-    float elapsedTime = 0.0f;
-    clock_t start = clock();
     for (int iIter = 0; iIter < nIters; ++ iIter) {
         for (int iGrid = 1; iGrid < nGrids-1; ++iGrid) {
             float leftX = x0[iGrid - 1];
@@ -35,10 +33,6 @@ float * jacobiCpu(const float * initX, const float * rhs, int nGrids, int nIters
         }
         float * tmp = x0; x0 = x1; x1 = tmp;
     }
-    clock_t end = clock();
-    elapsedTime = (float)(end - start) * 1000 / CLOCKS_PER_SEC;
-    
-    printf("CPU Elapsed Time is %f\n", elapsedTime);
 
     delete[] x1;
     return x0;
@@ -52,7 +46,7 @@ int jacobiCpuIterationCount(const float * initX, const float * rhs, int nGrids, 
     memcpy(x0, initX, sizeof(float) * nGrids);
     memcpy(x1, initX, sizeof(float) * nGrids);
 
-    float residual = 100.0;
+    float residual = 1000000000000.0;
     int iIter = 0;
     while (residual > TOL) {
         for (int iGrid = 1; iGrid < nGrids-1; ++iGrid) {
