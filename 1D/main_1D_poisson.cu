@@ -23,10 +23,12 @@
 #include "jacobi-1D-cpu.h"
 #include "jacobi-1D-gpu.h"
 #include "jacobi-1D-shared.h"
+#include "jacobi-1D-longer-subdomain-shared.h"
 
 // #define RUN_CPU_FLAG 1
 // #define RUN_GPU_FLAG 1
 #define RUN_SHARED_FLAG 1
+#define RUN_SHARED_LONGER_SUBDOMAIN_FLAG 1
 
 int main(int argc, char *argv[])
 {
@@ -40,13 +42,14 @@ int main(int argc, char *argv[])
     // INPUTS AND OUTPUT FILE NAMES
     const int nDim = 65536; //atoi(argv[1]); 
     const int threadsPerBlock = 32; //atoi(argv[2]); 
-    // const float TOL = 1.0; //atoi(argv[4]);
+    const int innerSubdomainLength = 32;
     const float residualReductionFactor = 1000.0; //atoi(argv[4]);
     const int OVERLAP = 0;
     const int subIterations = threadsPerBlock / 2;
     std::string CPU_FILE_NAME = "RESULTS/CPU_N65536_TOLREDUCE10000.txt";
     std::string GPU_FILE_NAME = "RESULTS/GPU_N65536_TOLREDUCE10000.txt";
     std::string SHARED_FILE_NAME = "RESULTS/SHARED_N65536_TOLREDUCE10000.txt";
+    std::string SHARED_LONGER_SUBDOMAIN_FILE_NAME = "RESULTS/SHARED_LONGER_SUBDOMAIN_N65536_TOLREDUCE10000.txt";
     /////////////////////////////////////////////////////////////////////////
 
     // INITIALIZE ARRAYS
@@ -110,6 +113,20 @@ int main(int argc, char *argv[])
 	float sharedJacobiResidual = residual1DPoisson(solutionJacobiShared, rhs, nGrids);
 #endif
  
+    // SHARED WITH LONGER SUBDOMAIN - JACOBI
+#ifdef RUN_SHARED_LONGER_SUBDOMAIN_FLAG
+	int sharedCyclesLong = jacobiSharedLongerSubdomainIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, subIterations, innerSubdomainLength);
+	cudaEvent_t start_sh_long, stop_sh_long;
+	cudaEventCreate(&start_sh_long);
+	cudaEventCreate(&stop_sh_long);
+	cudaEventRecord(start_sh_long, 0);
+	float * solutionJacobiSharedLong = jacobiSharedLongerSubdomain(initX, rhs, nGrids, sharedCycles, threadsPerBlock, OVERLAP, subIterations, innerSubdomainLength);
+	cudaEventRecord(stop_sh_long, 0);
+	cudaEventSynchronize(stop_sh_long);
+	float sharedJacobiTimeLong;
+	cudaEventElapsedTime(&sharedJacobiTimeLong, start_sh_long, stop_sh_long);
+	float sharedJacobiResidualLong = residual1DPoisson(solutionJacobiSharedLong, rhs, nGrids);
+#endif
 /*    // PRINT SOLUTION - NEEDS ADJUSTING BASED ON WHICH FLAGS ARE ON
     for (int i = 0; i < nGrids; i++) {
         printf("Grid %d = %f %f\n", i, solutionJacobiCpu[i], solutionJacobiGpu[i]);
@@ -164,6 +181,19 @@ int main(int argc, char *argv[])
 	sharedResults.close();
 #endif
 
+    // SHARED RESULTS LONGER SUBDOMAIN
+#ifdef RUN_SHARED_LONGER_SUBDOMAIN_FLAG 
+	printf("===============SHARED (LONG)============================\n");
+    printf("Length of Subdomain: %d with Threads Per Block: %d\n", innerSubdomainLength, threadsPerBlock);
+	printf("Number of Cycles needed for Jacobi Shared Longer Subdomain: %d (OVERLAP = %d, SUBITERATIONS = %d) \n", sharedCyclesLong, OVERLAP, subIterations);
+    printf("Time needed for the Jacobi Shared: %f ms\n", sharedJacobiTimeLong);
+	printf("Residual of the Jacobi Shared solution is %f\n", sharedJacobiResidualLong);
+	std::ofstream sharedResultsLong;
+	sharedResultsLong.open(SHARED_FILE_NAME, std::ios::app);
+	sharedResultsLong << nDim << " " << threadsPerBlock << " " << sharedCyclesLong << " " << sharedJacobiTimeLong << " " << sharedJacobiResidualLong << "\n";
+	sharedResultsLong.close();
+#endif
+    
     // FREE MEMORY
     delete[] initX;
     delete[] rhs;
@@ -175,6 +205,9 @@ int main(int argc, char *argv[])
 #endif
 #ifdef RUN_SHARED_FLAG
     delete[] solutionJacobiShared;
+#endif
+#ifdef RUN_SHARED_LONGER_SUBDOMAIN_FLAG
+    delete[] solutionJacobiSharedLong;
 #endif
     
     return 0;
