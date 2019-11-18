@@ -24,8 +24,8 @@
 #include "jacobi-2D-gpu.h"
 #include "jacobi-2D-shared.h"
 
-#define RUN_CPU_FLAG 1
-#define RUN_GPU_FLAG 1
+// #define RUN_CPU_FLAG 1
+// #define RUN_GPU_FLAG 1
 #define RUN_SHARED_FLAG 1
 
 int main(int argc, char *argv[])
@@ -39,13 +39,15 @@ int main(int argc, char *argv[])
     setGPU(gpuToUse);
 
     // INPUTS AND OUTPUT FILE NAMES
-    const int nxDim = 64; //atoi(argv[1]); 
-    const int nyDim = 64; //atoi(argv[1]); 
-    const int threadsPerBlock = 32; //atoi(argv[2]); 
+    const int nxDim = 256; //atoi(argv[1]); 
+    const int nyDim = 256; //atoi(argv[1]); 
+    const int threadsPerBlock_x = 32; //atoi(argv[2]); 
+    const int threadsPerBlock_y = 32; //atoi(argv[2]); 
     // const float TOL = 1.0; //atoi(argv[4]);
     const float residualReductionFactor = 10000.0; 
-    const int OVERLAP = 0;
-    const int subIterations = threadsPerBlock / 2;
+    const int OVERLAP_X = 0;
+    const int OVERLAP_Y = 0;
+    const int subIterations = std::min(threadsPerBlock_x, threadsPerBlock_y) / 2;
     std::string CPU_FILE_NAME = "RESULTS/CPU_N1024_TOL1.txt";
     std::string GPU_FILE_NAME = "RESULTS/GPU_N1024_TOL1.txt";
     std::string SHARED_FILE_NAME = "RESULTS/SHARED_N1024_TOL1.txt";
@@ -90,12 +92,12 @@ int main(int argc, char *argv[])
 
     // GPU - JACOBI
 #ifdef RUN_GPU_FLAG
-	int gpuIterations = jacobiGpuIterationCount(initX, rhs, nxGrids, nyGrids, TOL, threadsPerBlock);
+	int gpuIterations = jacobiGpuIterationCount(initX, rhs, nxGrids, nyGrids, TOL, threadsPerBlock_x, threadsPerBlock_y);
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 	cudaEventRecord(start, 0);
-	float * solutionJacobiGpu = jacobiGpu(initX, rhs, nxGrids, nyGrids, gpuIterations, threadsPerBlock);
+	float * solutionJacobiGpu = jacobiGpu(initX, rhs, nxGrids, nyGrids, gpuIterations, threadsPerBlock_x, threadsPerBlock_y);
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	float gpuJacobiTime;
@@ -105,12 +107,12 @@ int main(int argc, char *argv[])
 
     // SHARED - JACOBI
 #ifdef RUN_SHARED_FLAG
-    int sharedCycles = jacobiSharedIterationCount(initX, rhs, nxGrids, nyGrids, TOL, threadsPerBlock, OVERLAP, subIterations);
+    int sharedCycles = jacobiSharedIterationCount(initX, rhs, nxGrids, nyGrids, TOL, threadsPerBlock_x, threadsPerBlock_y, OVERLAP_X, OVERLAP_Y, subIterations);
     cudaEvent_t start_sh, stop_sh;
     cudaEventCreate(&start_sh);
     cudaEventCreate(&stop_sh);
     cudaEventRecord(start_sh, 0);
-    float * solutionJacobiShared = jacobiShared(initX, rhs, nxGrids, nyGrids, sharedCycles, threadsPerBlock, OVERLAP, subIterations);
+    float * solutionJacobiShared = jacobiShared(initX, rhs, nxGrids, nyGrids, sharedCycles, threadsPerBlock_x, threadsPerBlock_y, OVERLAP_X, OVERLAP_Y, subIterations);
     cudaEventRecord(stop_sh, 0);
     cudaEventSynchronize(stop_sh);
     float sharedJacobiTime;
@@ -131,7 +133,8 @@ int main(int argc, char *argv[])
     printf("GPU Name: %s\n", gpuToUse.c_str());
     printf("Number of unknowns in x: %d\n", nxDim);
     printf("Number of unknowns in y: %d\n", nyDim);
-    printf("Threads Per Block: %d\n", threadsPerBlock);
+    printf("Threads Per Block in x: %d\n", threadsPerBlock_x);
+    printf("Threads Per Block in y: %d\n", threadsPerBlock_y);
     printf("Residual of initial solution %f\n", initResidual);
     printf("Desired TOL of residual %f\n", TOL);
     printf("Residual reduction factor %f\n", residualReductionFactor);
@@ -157,19 +160,19 @@ int main(int argc, char *argv[])
 	printf("Residual of the Jacobi GPU solution is %f\n", gpuJacobiResidual);
 	std::ofstream gpuResults;
 	gpuResults.open(GPU_FILE_NAME, std::ios::app);
-	gpuResults << nxDim << " " << nyDim << " " << threadsPerBlock << " " << gpuIterations << " " << gpuJacobiTime << " " << gpuJacobiResidual << "\n";
+	gpuResults << nxDim << " " << nyDim << " " << threadsPerBlock_x << " " << threadsPerBlock_y << " " << gpuIterations << " " << gpuJacobiTime << " " << gpuJacobiResidual << "\n";
 	gpuResults.close();
 #endif
 
     // SHARED RESULTS
 #ifdef RUN_SHARED_FLAG
     printf("===============SHARED============================\n");
-    printf("Number of Cycles needed for Jacobi Shared: %d (OVERLAP = %d, SUBITERATIONS = %d) \n", sharedCycles, OVERLAP, subIterations);
+    printf("Number of Cycles needed for Jacobi Shared: %d (OVERLAP_X = %d, OVERLAP_Y = %d, SUBITERATIONS = %d) \n", sharedCycles, OVERLAP_X, OVERLAP_Y, subIterations);
     printf("Time needed for the Jacobi Shared: %f ms\n", sharedJacobiTime);
     printf("Residual of the Jacobi Shared solution is %f\n", sharedJacobiResidual);
     std::ofstream sharedResults;
-    sharedResults.open(SHARED_FILE_NAME, std::ios::app);
-    sharedResults << nxDim << " " << nyDim << " " << threadsPerBlock << " " << sharedCycles << " " << sharedJacobiTime << " " << sharedJacobiResidual << "\n";
+    sharedResults.open(SHARED_FILE_NAME.c_str(), std::ios::app);
+    sharedResults << nxDim << " " << nyDim << " " << threadsPerBlock_x << " " << threadsPerBlock_y << " " << sharedCycles << " " << sharedJacobiTime << " " << sharedJacobiResidual << "\n";
     sharedResults.close();
 #endif
 
