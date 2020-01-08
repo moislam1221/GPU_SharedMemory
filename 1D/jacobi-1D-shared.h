@@ -21,7 +21,7 @@ void __jacobiUpdateKernel(const float * rhsBlock, const int nGrids, const int nS
 }
 
 __global__
-void _jacobiUpdate(float * x0Gpu, const float * rhsGpu, const int nGrids, const int OVERLAP, const int subIterations)
+void _jacobiUpdate(float * x1Gpu, const float * x0Gpu, const float * rhsGpu, const int nGrids, const int OVERLAP, const int subIterations)
 {
     // Move to shared memory
     extern __shared__ float sharedMemory[];
@@ -51,7 +51,6 @@ void _jacobiUpdate(float * x0Gpu, const float * rhsGpu, const int nGrids, const 
     // STEP 2 - UPDATE ALL INNER POINTS IN EACH BLOCK
     __jacobiUpdateKernel(rhsBlock, nGrids, nPerSubdomain, OVERLAP, subIterations);
 
-
     // STEP 3 - MOVE ALL VALUES FROM SHARED MEMORY BACK TO GLOBAL MEMORY
     // Move back to global memory (if overlap = 0 ONLY)
 /*    if ((I+1) < nGrids) {
@@ -61,17 +60,17 @@ void _jacobiUpdate(float * x0Gpu, const float * rhsGpu, const int nGrids, const 
     if ((I+1) < nGrids) {
         if (blockIdx.x == 0) {
             if (threadIdx.x <= blockDim.x - 1 - OVERLAP/2) {
-                x0Gpu[I+1] = sharedMemory[i+1];
+                x1Gpu[I+1] = sharedMemory[i+1];
             }
         }
         else if (blockIdx.x == gridDim.x - 1) {
             if (threadIdx.x >= OVERLAP/2) {
-                x0Gpu[I+1] = sharedMemory[i+1];
+                x1Gpu[I+1] = sharedMemory[i+1];
             }
         }
         else {
             if (threadIdx.x >= OVERLAP/2 && threadIdx.x <= blockDim.x - 1 - OVERLAP/2) {
-                x0Gpu[I+1] = sharedMemory[i+1];
+                x1Gpu[I+1] = sharedMemory[i+1];
             }
         } 
     }
@@ -88,12 +87,14 @@ float * jacobiShared(const float * initX, const float * rhs, const int nGrids, c
     const int numBlocks = ceil(((float)nGrids-2.0-(float)OVERLAP) / ((float)threadsPerBlock-(float)OVERLAP));
 
     // Allocate GPU memory via cudaMalloc
-    float * x0Gpu, * rhsGpu;
+    float * x0Gpu, * x1Gpu, * rhsGpu;
     cudaMalloc(&x0Gpu, sizeof(float) * nGrids);
+    cudaMalloc(&x1Gpu, sizeof(float) * nGrids);
     cudaMalloc(&rhsGpu, sizeof(float) * nGrids);
     
     // Copy contents to GPU
     cudaMemcpy(x0Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
+    cudaMemcpy(x1Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(rhsGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
 
     // Define amount of shared memory needed
@@ -101,7 +102,10 @@ float * jacobiShared(const float * initX, const float * rhs, const int nGrids, c
 
     // Call kernel to allocate to sharedmemory and update points
     for (int step = 0; step < cycles; step++) {
-        _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x0Gpu, rhsGpu, nGrids, OVERLAP, subIterations);
+        _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x1Gpu, x0Gpu, rhsGpu, nGrids, OVERLAP, subIterations);
+		{
+            float * tmp = x1Gpu; x1Gpu = x0Gpu; x0Gpu = tmp;
+		}
     }
 
     float * solution = new float[nGrids];
@@ -124,12 +128,14 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
     const int numBlocks = ceil(((float)nGrids-2.0-(float)OVERLAP) / ((float)threadsPerBlock-(float)OVERLAP));
 
     // Allocate GPU memory via cudaMalloc
-    float * x0Gpu, * rhsGpu;
+    float * x0Gpu, * x1Gpu, * rhsGpu;
     cudaMalloc(&x0Gpu, sizeof(float) * nGrids);
+    cudaMalloc(&x1Gpu, sizeof(float) * nGrids);
     cudaMalloc(&rhsGpu, sizeof(float) * nGrids);
     
     // Copy contents to GPU
     cudaMemcpy(x0Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
+    cudaMemcpy(x1Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(rhsGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
 
     // Define amount of shared memory needed
@@ -140,14 +146,17 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
     int nIters = 0;
     float * solution = new float[nGrids];
     while (residual > TOL) {
-        _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x0Gpu, rhsGpu, nGrids, OVERLAP, subIterations);
+        _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x1Gpu, x0Gpu, rhsGpu, nGrids, OVERLAP, subIterations);
+        {
+            float * tmp = x1Gpu; x1Gpu = x0Gpu; x0Gpu = tmp;
+        }
         nIters++;
         cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
         residual = residual1DPoisson(solution, rhs, nGrids);
-        if (nIters % 1000 == 0) {
+/*        if (nIters % 1000 == 0) {
             printf("Shared: The residual is %f\n", residual);
         }
-    }
+*/    }
 
     // Clean up
     delete[] solution;
