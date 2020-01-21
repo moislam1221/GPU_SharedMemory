@@ -74,36 +74,50 @@ int jacobiGpuIterationCount(const float * initX, const float * rhs, const int nG
     float dx = 1.0 / (nGrids - 1);
     
     // Allocate memory in the CPU for all inputs and solutions
-    float * x0Gpu, * x1Gpu, * rhsGpu;
+    float * x0Gpu, * x1Gpu, * rhsGpu, * residualGpu;
     cudaMalloc(&x0Gpu, sizeof(float) * nGrids);
     cudaMalloc(&x1Gpu, sizeof(float) * nGrids);
     cudaMalloc(&rhsGpu, sizeof(float) * nGrids);
-    
+    cudaMalloc(&residualGpu, sizeof(float) * nGrids);
+
     // Allocate GPU memory
     cudaMemcpy(x0Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(x1Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(rhsGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
+    cudaMemcpy(residualGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
 
     // Run the classic iteration for prescribed number of iterations
     int nBlocks = (int)ceil(nGrids / (float)threadsPerBlock);
     float residual = 1000000000000.0;
     int iIter = 0;
     float * solution = new float[nGrids];
+    float * residualCpu = new float[nGrids];
     while (residual > TOL) {
 	// Jacobi iteration on the GPU
         _jacobiGpuClassicIteration<<<nBlocks, threadsPerBlock>>>(
                 x1Gpu, x0Gpu, rhsGpu, nGrids, dx); 
-        float * tmp = x0Gpu; x0Gpu = x1Gpu; x1Gpu = tmp;
+        {
+            float * tmp = x0Gpu; x0Gpu = x1Gpu; x1Gpu = tmp;
+        }
         iIter++;
         // Write solution from GPU to CPU variable
-        cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
-        residual = residual1DPoisson(solution, rhs,  nGrids);
+		// cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
+		// residual = residual1DPoisson(solution, rhs,  nGrids);
+        residual1DPoissonGPU <<<nBlocks, threadsPerBlock>>> (residualGpu, x0Gpu, rhsGpu, nGrids);
+        cudaDeviceSynchronize();
+        cudaMemcpy(residualCpu, residualGpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
+        residual = 0.0;
+        for (int j = 0; j < nGrids; j++) {
+            residual = residual + residualCpu[j];
+        }
+        residual = sqrt(residual);
         if (iIter % 1000 == 0) {
-            printf("GPU: The residual at step %d is %f\n", iIter, residual);
+			printf("GPU: The residual at step %d is %f\n", iIter, residual);
         }
     }
     // Free all memory
     delete[] solution;
+    delete[] residualCpu;
     cudaFree(x0Gpu);
     cudaFree(x1Gpu);
     cudaFree(rhsGpu);
