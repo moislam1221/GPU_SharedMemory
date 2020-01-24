@@ -61,23 +61,39 @@ void _jacobiUpdate(float * x1Gpu, const float * x0Gpu, const float * rhsGpu, con
     if ((I+1) < nGrids) {
         if (blockIdx.x == 0) {
             if (threadIdx.x <= blockDim.x - 1 - OVERLAP/2) {
-                x1Gpu[I+1] = sharedMemory[i+1];
+                if ((subIterations % 2) == 0) {
+                    x1Gpu[I+1] = sharedMemory[i+1];
+                }
+                else {
+                    x1Gpu[I+1] = sharedMemory[i+1 + nPerSubdomain];
+                }
             }
         }
         else if (blockIdx.x == gridDim.x - 1) {
             if (threadIdx.x >= OVERLAP/2) {
-                x1Gpu[I+1] = sharedMemory[i+1];
+                if ((subIterations % 2) == 0) {
+                    x1Gpu[I+1] = sharedMemory[i+1];
+                }
+                else {
+                    x1Gpu[I+1] = sharedMemory[i+1 + nPerSubdomain];
+                }
             }
         }
         else {
             if (threadIdx.x >= OVERLAP/2 && threadIdx.x <= blockDim.x - 1 - OVERLAP/2) {
-                x1Gpu[I+1] = sharedMemory[i+1];
+                if ((subIterations % 2) == 0) {
+                    x1Gpu[I+1] = sharedMemory[i+1];
+                }
+                else {
+                    x1Gpu[I+1] = sharedMemory[i+1 + nPerSubdomain];
+                }
             }
         } 
     }
 
     __syncthreads();
 }
+
 
 float * jacobiShared(const float * initX, const float * rhs, const int nGrids, const int cycles, const int threadsPerBlock, const int OVERLAP, const int subIterations)
 {
@@ -115,9 +131,11 @@ float * jacobiShared(const float * initX, const float * rhs, const int nGrids, c
 
     // Clean up
     cudaFree(x0Gpu);
+    cudaFree(x1Gpu);
     cudaFree(rhsGpu);
 
     return solution;
+    delete[] solution;
 }
 
 int jacobiSharedIterationCount(const float * initX, const float * rhs, const int nGrids, const float TOL, const int threadsPerBlock, const int OVERLAP, const int subIterations)
@@ -129,15 +147,17 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
     const int numBlocks = ceil(((float)nGrids-2.0-(float)OVERLAP) / ((float)threadsPerBlock-(float)OVERLAP));
 
     // Allocate GPU memory via cudaMalloc
-    float * x0Gpu, * x1Gpu, * rhsGpu;
+    float * x0Gpu, * x1Gpu, * rhsGpu, * residualGpu;
     cudaMalloc(&x0Gpu, sizeof(float) * nGrids);
     cudaMalloc(&x1Gpu, sizeof(float) * nGrids);
     cudaMalloc(&rhsGpu, sizeof(float) * nGrids);
-    
+    cudaMalloc(&residualGpu, sizeof(float) * nGrids);
+
     // Copy contents to GPU
     cudaMemcpy(x0Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(x1Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(rhsGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
+    cudaMemcpy(residualGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
 
     // Define amount of shared memory needed
     const int sharedBytes = 3 * nSub * sizeof(float);
@@ -146,23 +166,42 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
     float residual = 1000000000000.0;
     int nIters = 0;
     float * solution = new float[nGrids];
+    float * residualCpu = new float[nGrids];
     while (residual > TOL) {
         _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x1Gpu, x0Gpu, rhsGpu, nGrids, OVERLAP, subIterations);
+        cudaError_t errSync  = cudaGetLastError();
+        cudaError_t errAsync = cudaDeviceSynchronize();
+        if (errSync != cudaSuccess) 
+            printf("Sync kernel error: %s\n", cudaGetErrorString(errSync));
+        if (errAsync != cudaSuccess)
+            printf("Async kernel error: %s\n", cudaGetErrorString(errAsync)); 
         {
             float * tmp = x1Gpu; x1Gpu = x0Gpu; x0Gpu = tmp;
         }
         nIters++;
-        cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
-        residual = residual1DPoisson(solution, rhs, nGrids);
-/*        if (nIters % 10 == 0) {
-            printf("Shared: The residual is %f\n", residual);
+		// cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
+		// residual = residual1DPoisson(solution, rhs, nGrids);
+		residual1DPoissonGPU <<<numBlocks, threadsPerBlock>>> (residualGpu, x0Gpu, rhsGpu, nGrids);
+        cudaDeviceSynchronize();
+        cudaMemcpy(residualCpu, residualGpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
+        residual = 0.0;
+        for (int j = 0; j < nGrids; j++) {
+            residual = residual + residualCpu[j];
         }
-*/    }
-
+        residual = sqrt(residual);
+        if (nIters % 1000 == 0) {
+            printf("%d\n", nIters);
+		    printf("Shared: The residual is %f\n", residual);
+        }
+    }
+ 
     // Clean up
     delete[] solution;
+    delete[] residualCpu;
     cudaFree(x0Gpu);
+    cudaFree(x1Gpu);
     cudaFree(rhsGpu);
 
     return nIters;
 }
+
