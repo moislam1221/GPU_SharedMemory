@@ -19,13 +19,14 @@
 // HEADER FILES
 #include "Helper/jacobi.h"
 #include "Helper/residual.h"
+#include "Helper/solution_error.h"
 #include "Helper/setGPU.h"
 #include "jacobi-1D-cpu.h"
 #include "jacobi-1D-gpu.h"
 #include "jacobi-1D-shared.h"
 
-// #define RUN_CPU_FLAG 1
-// #define RUN_GPU_FLAG 1
+#define RUN_CPU_FLAG 1
+#define RUN_GPU_FLAG 1
 #define RUN_SHARED_FLAG 1
 
 int main(int argc, char *argv[])
@@ -38,16 +39,17 @@ int main(int argc, char *argv[])
     setGPU(gpuToUse);
 
     // INPUTS AND OUTPUT FILE NAMES
-    const int nDim = 1048576; // 65536; //524288; //65536; //atoi(argv[1]); 
-    const int threadsPerBlock = 1024; //32; //512; // 32; 
+    const int nDim = 1024; // 65536; //524288; //65536; //atoi(argv[1]); 
+    const int threadsPerBlock = 32; //32; //512; // 32; 
     // const float TOL = 1.0; //atoi(argv[4]);
-    const float residualReductionFactor = 10000.0; //atoi(argv[4]);
+    // const float residualReductionFactor = 10000.0; //atoi(argv[4]);
+    const float errorReductionFactor = 10.0; //atoi(argv[4]);
     const int OVERLAP = 0;
     const int subIterations = threadsPerBlock / 2;
-    const int numTrials = 20;
-    std::string CPU_FILE_NAME = "RESULTS/CPU_N1048576_TOLREDUCE10000.txt";
-    std::string GPU_FILE_NAME = "RESULTS/GPU_N1048576_TOLREDUCE10000.txt";
-    std::string SHARED_FILE_NAME = "RESULTS/SHARED_N1048576_TOLREDUCE10000.txt";
+    const int numTrials = 1;
+    std::string CPU_FILE_NAME = "RESULTS/CPU_N1048576_ERRORREDUCE10000.txt";
+    std::string GPU_FILE_NAME = "RESULTS/GPU_N1048576_ERRORREDUCE10000.txt";
+    std::string SHARED_FILE_NAME = "RESULTS/SHARED_N1048576_ERRORREDUCE10000.txt";
     /////////////////////////////////////////////////////////////////////////
 
     // INITIALIZE ARRAYS
@@ -66,28 +68,38 @@ int main(int argc, char *argv[])
         rhs[iGrid] = 1.0f;
     }
 
+    // LOAD EXACT SOLUTION
+    float * solution_exact = new float[nGrids];
+    std::string SOLUTIONEXACT_FILENAME = "solution_exact_N1024.txt";
+    loadSolutionExact(solution_exact, SOLUTIONEXACT_FILENAME, nGrids);
+
     // COMPUTE INITIAL RESIDUAL AND SET TOLERANCE
-	float initResidual = residual1DPoisson(initX, rhs, nGrids);
-    const float TOL = initResidual / residualReductionFactor; //atoi(argv[4]);
+	// float initResidual = residual1DPoisson(initX, rhs, nGrids);
+	float initSolutionError = solutionError1DPoisson(initX, solution_exact, nGrids);
+    // const float TOL = initResidual / residualReductionFactor; //atoi(argv[4]);
+    const float TOL = initSolutionError / errorReductionFactor; //atoi(argv[4]);
     
     // Print parameters of the problem to screen
     printf("===============INFORMATION============================\n");
     printf("GPU Name: %s\n", gpuToUse.c_str());
     printf("Number of unknowns: %d\n", nDim);
     printf("Threads Per Block: %d\n", threadsPerBlock);
-    printf("Residual of initial solution: %f\n", initResidual);
+    // printf("Residual of initial solution: %f\n", initResidual);
+    printf("Solution Error of initial solution: %f\n", initSolutionError);
     printf("Desired TOL of residual: %f\n", TOL);
-    printf("Residual reduction factor: %f\n", residualReductionFactor);
+    printf("Residual reduction factor: %f\n", errorReductionFactor);
     printf("Number of Trials: %d\n", numTrials);
     printf("======================================================\n");
     
     // CPU - JACOBI
 #ifdef RUN_CPU_FLAG
-	int cpuIterations = jacobiCpuIterationCount(initX, rhs, nGrids, TOL);
+	// int cpuIterations = jacobiCpuIterationCount(initX, rhs, nGrids, TOL);
+	int cpuIterations = jacobiCpuIterationCount(initX, solution_exact, rhs, nGrids, TOL);
     double cpuJacobiTimeTrial;
     double cpuJacobiTimeAverage;
     double cpuTotalTime = 0.0;
-    float cpuJacobiResidual;
+    // float cpuJacobiResidual;
+    float cpuJacobiSolutionError;
     float * solutionJacobiCpu;
     for (int iter = 0; iter < numTrials; iter++) {
 		clock_t cpuJacobiStartTime = clock();
@@ -99,16 +111,19 @@ int main(int argc, char *argv[])
         printf("Completed CPU trial %d\n", iter);
     }
     cpuJacobiTimeAverage = cpuTotalTime / numTrials;
-	cpuJacobiResidual = residual1DPoisson(solutionJacobiCpu, rhs, nGrids);
+	// cpuJacobiResidual = residual1DPoisson(solutionJacobiCpu, rhs, nGrids);
+	cpuJacobiSolutionError = solutionError1DPoisson(solutionJacobiCpu, solution_exact, nGrids);
 #endif
 
     // GPU - JACOBI
 #ifdef RUN_GPU_FLAG
-	int gpuIterations = jacobiGpuIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock);
+	// int gpuIterations = jacobiGpuIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock);
+	int gpuIterations = jacobiGpuIterationCount(initX, solution_exact, rhs, nGrids, TOL, threadsPerBlock);
 	float gpuJacobiTimeTrial;
 	float gpuJacobiTimeAverage;
     float gputotalTime = 0.0;
-	float gpuJacobiResidual;
+	// float gpuJacobiResidual;
+	float gpuJacobiSolutionError;
     cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
@@ -123,16 +138,18 @@ int main(int argc, char *argv[])
         printf("Completed GPU trial %d\n", iter);
 	}
     gpuJacobiTimeAverage = gputotalTime / numTrials;
-    gpuJacobiResidual = residual1DPoisson(solutionJacobiGpu, rhs, nGrids);
+    // gpuJacobiResidual = residual1DPoisson(solutionJacobiGpu, rhs, nGrids);
+    gpuJacobiSolutionError = solutionError1DPoisson(solutionJacobiGpu, solution_exact, nGrids);
 #endif
  
     // SHARED - JACOBI
 #ifdef RUN_SHARED_FLAG
-	int sharedCycles = jacobiSharedIterationCount(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, subIterations);
+	int sharedCycles = jacobiSharedIterationCount(initX, solution_exact, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, subIterations);
     float sharedJacobiTimeTrial;
     float sharedJacobiTimeAverage;
     float sharedtotalTime = 0;
-    float sharedJacobiResidual;
+    // float sharedJacobiResidual;
+    float sharedJacobiSolutionError;
 	cudaEvent_t start_sh, stop_sh;
 	cudaEventCreate(&start_sh);
 	cudaEventCreate(&stop_sh);
@@ -147,7 +164,8 @@ int main(int argc, char *argv[])
         printf("Completed GPU Shared trial %d\n", iter);
 	}
     sharedJacobiTimeAverage = sharedtotalTime / numTrials;
-    sharedJacobiResidual = residual1DPoisson(solutionJacobiShared, rhs, nGrids);
+    // sharedJacobiResidual = residual1DPoisson(solutionJacobiShared, rhs, nGrids);
+    sharedJacobiSolutionError = solutionError1DPoisson(solutionJacobiShared, solution_exact, nGrids);
 #endif
  
     // PRINT SOLUTION - NEEDS ADJUSTING BASED ON WHICH FLAGS ARE ON
@@ -161,10 +179,12 @@ int main(int argc, char *argv[])
 	printf("===============CPU============================\n");
 	printf("Number of Iterations needed for Jacobi CPU: %d \n", cpuIterations);
 	printf("Time needed for the Jacobi CPU: %f ms\n", cpuJacobiTimeAverage);
-	printf("Residual of the Jacobi CPU solution is %f\n", cpuJacobiResidual);
+	// printf("Residual of the Jacobi CPU solution is %f\n", cpuJacobiResidual);
+	printf("Solution Error of the Jacobi CPU solution is %f\n", cpuJacobiSolutionError);
 	std::ofstream cpuResults;
 	cpuResults.open(CPU_FILE_NAME, std::ios::app);
-	cpuResults << nDim << " " << residualReductionFactor << " " << numTrials << " " << cpuJacobiTimeAverage << " " << cpuIterations << " " << cpuJacobiResidual << "\n";
+	// cpuResults << nDim << " " << residualReductionFactor << " " << numTrials << " " << cpuJacobiTimeAverage << " " << cpuIterations << " " << cpuJacobiResidual << "\n";
+	cpuResults << nDim << " " << errorReductionFactor << " " << numTrials << " " << cpuJacobiTimeAverage << " " << cpuIterations << " " << cpuJacobiSolutionError << "\n";
 	cpuResults.close();
 #endif
  
@@ -173,10 +193,12 @@ int main(int argc, char *argv[])
 	printf("===============GPU============================\n");
 	printf("Number of Iterations needed for Jacobi GPU: %d \n", gpuIterations);
 	printf("Time needed for the Jacobi GPU: %f ms\n", gpuJacobiTimeAverage);
-	printf("Residual of the Jacobi GPU solution is %f\n", gpuJacobiResidual);
+	// printf("Residual of the Jacobi GPU solution is %f\n", gpuJacobiResidual);
+	printf("Solution Error of the Jacobi GPU solution is %f\n", gpuJacobiSolutionError);
 	std::ofstream gpuResults;
 	gpuResults.open(GPU_FILE_NAME, std::ios::app);
-	gpuResults << nDim << " " << threadsPerBlock << " " << residualReductionFactor << " " << numTrials << " " << gpuJacobiTimeAverage << " " << gpuIterations << " " << gpuJacobiResidual << "\n";
+	// gpuResults << nDim << " " << threadsPerBlock << " " << residualReductionFactor << " " << numTrials << " " << gpuJacobiTimeAverage << " " << gpuIterations << " " << gpuJacobiResidual << "\n";
+	gpuResults << nDim << " " << threadsPerBlock << " " << errorReductionFactor << " " << numTrials << " " << gpuJacobiTimeAverage << " " << gpuIterations << " " << gpuJacobiSolutionError << "\n";
 	gpuResults.close();
 #endif
 
@@ -185,16 +207,19 @@ int main(int argc, char *argv[])
 	printf("===============SHARED============================\n");
 	printf("Number of Cycles needed for Jacobi Shared: %d (%d) \n", sharedCycles, threadsPerBlock/2);
 	printf("Time needed for the Jacobi Shared: %f ms\n", sharedJacobiTimeAverage);
-	printf("Residual of the Jacobi Shared solution is %f\n", sharedJacobiResidual);
+	// printf("Residual of the Jacobi Shared solution is %f\n", sharedJacobiResidual);
+	printf("Solution Error of the Jacobi Shared solution is %f\n", sharedJacobiSolutionError);
 	std::ofstream sharedResults;
 	sharedResults.open(SHARED_FILE_NAME, std::ios::app);
-	sharedResults << nDim << " " << threadsPerBlock << " " << residualReductionFactor << " " << numTrials << " " <<  sharedJacobiTimeAverage << " " << sharedCycles << " " << subIterations << " " << sharedJacobiResidual << "\n";
+	// sharedResults << nDim << " " << threadsPerBlock << " " << residualReductionFactor << " " << numTrials << " " <<  sharedJacobiTimeAverage << " " << sharedCycles << " " << subIterations << " " << sharedJacobiResidual << "\n";
+	sharedResults << nDim << " " << threadsPerBlock << " " << errorReductionFactor << " " << numTrials << " " << sharedJacobiTimeAverage << " " << sharedCycles << " " << subIterations << " " << sharedJacobiSolutionError << "\n";
 	sharedResults.close();
 #endif
 
     // FREE MEMORY
     delete[] initX;
     delete[] rhs;
+    delete[] solution_exact;
 #ifdef RUN_CPU_FLAG
     delete[] solutionJacobiCpu;
 #endif 
