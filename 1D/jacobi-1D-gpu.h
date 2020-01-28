@@ -135,7 +135,7 @@ int jacobiGpuIterationCount(const float * initX, const float * solution_exact, c
         }
         solution_error = sqrt(solution_error);
         if (iIter % 1000 == 0) {
-			printf("GPU: The solution error at step %d is %f\n", iIter, solution_error);
+	    printf("GPU: The solution error at step %d is %f\n", iIter, solution_error);
         }
     }
 
@@ -150,6 +150,7 @@ int jacobiGpuIterationCount(const float * initX, const float * solution_exact, c
     cudaFree(x1Gpu);
     cudaFree(rhsGpu);
     cudaFree(solutionErrorGpu);
+    cudaFree(solution_exactGpu);
 
     int nIters = iIter;
     return nIters;

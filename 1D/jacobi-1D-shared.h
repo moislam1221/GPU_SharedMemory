@@ -138,7 +138,7 @@ float * jacobiShared(const float * initX, const float * rhs, const int nGrids, c
     delete[] solution;
 }
 
-int jacobiSharedIterationCount(const float * initX, const float * rhs, const int nGrids, const float TOL, const int threadsPerBlock, const int OVERLAP, const int subIterations)
+int jacobiSharedIterationCount(const float * initX, const float * solution_exact, const float * rhs, const int nGrids, const float TOL, const int threadsPerBlock, const int OVERLAP, const int subIterations)
 {
     // Number of grid points handled by a subdomain
     const int nSub = threadsPerBlock + 2;
@@ -147,27 +147,33 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
     const int numBlocks = ceil(((float)nGrids-2.0-(float)OVERLAP) / ((float)threadsPerBlock-(float)OVERLAP));
 
     // Allocate GPU memory via cudaMalloc
-    float * x0Gpu, * x1Gpu, * rhsGpu, * residualGpu;
+    float * x0Gpu, * x1Gpu, * rhsGpu, * solutionErrorGpu, * solution_exactGpu; // * residualGpu;
     cudaMalloc(&x0Gpu, sizeof(float) * nGrids);
     cudaMalloc(&x1Gpu, sizeof(float) * nGrids);
     cudaMalloc(&rhsGpu, sizeof(float) * nGrids);
-    cudaMalloc(&residualGpu, sizeof(float) * nGrids);
+    // cudaMalloc(&residualGpu, sizeof(float) * nGrids);
+    cudaMalloc(&solutionErrorGpu, sizeof(float) * nGrids);
+    cudaMalloc(&solution_exactGpu, sizeof(float) * nGrids);
 
     // Copy contents to GPU
     cudaMemcpy(x0Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(x1Gpu, initX, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(rhsGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
-    cudaMemcpy(residualGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
+    // cudaMemcpy(residualGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
+    cudaMemcpy(solutionErrorGpu, rhs, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
+    cudaMemcpy(solution_exactGpu, solution_exact, sizeof(float) * nGrids, cudaMemcpyHostToDevice);
 
     // Define amount of shared memory needed
     const int sharedBytes = 3 * nSub * sizeof(float);
 
     // Call kernel to allocate to sharedmemory and update points
-    float residual = 1000000000000.0;
+    // float residual = 1000000000000.0;
+    float solution_error = 1000000000000.0;
     int nIters = 0;
     float * solution = new float[nGrids];
-    float * residualCpu = new float[nGrids];
-    while (residual > TOL) {
+    // float * residualCpu = new float[nGrids];
+    float * solutionErrorCpu = new float[nGrids];
+    while (solution_error > TOL) {
         _jacobiUpdate <<<numBlocks, threadsPerBlock, sharedBytes>>> (x1Gpu, x0Gpu, rhsGpu, nGrids, OVERLAP, subIterations);
         cudaError_t errSync  = cudaGetLastError();
         cudaError_t errAsync = cudaDeviceSynchronize();
@@ -179,9 +185,12 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
             float * tmp = x1Gpu; x1Gpu = x0Gpu; x0Gpu = tmp;
         }
         nIters++;
-		// cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
-		// residual = residual1DPoisson(solution, rhs, nGrids);
-		residual1DPoissonGPU <<<numBlocks, threadsPerBlock>>> (residualGpu, x0Gpu, rhsGpu, nGrids);
+
+        // RESIDUAL
+//		cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
+//		residual = residual1DPoisson(solution, rhs, nGrids);
+//        residual = 0.0;
+/*		residual1DPoissonGPU <<<numBlocks, threadsPerBlock>>> (residualGpu, x0Gpu, rhsGpu, nGrids);
         cudaDeviceSynchronize();
         cudaMemcpy(residualCpu, residualGpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
         residual = 0.0;
@@ -193,14 +202,35 @@ int jacobiSharedIterationCount(const float * initX, const float * rhs, const int
             printf("%d\n", nIters);
 		    printf("Shared: The residual is %f\n", residual);
         }
+*/
+        // ERROR CALCULATION
+		cudaMemcpy(solution, x0Gpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
+		solution_error = solutionError1DPoisson(solution, solution_exact, nGrids);
+//		float residual = residual1DPoisson(solution, rhs, nGrids);
+/*		solutionError1DPoissonGPU <<<numBlocks, threadsPerBlock>>> (solutionErrorGpu, x0Gpu, solution_exactGpu, nGrids);
+        cudaDeviceSynchronize();
+        cudaMemcpy(solutionErrorCpu, solutionErrorGpu, sizeof(float) * nGrids, cudaMemcpyDeviceToHost);
+        solution_error = 0.0;
+        for (int j = 0; j < nGrids; j++) {
+            solution_error = solution_error + solutionErrorCpu[j];
+        }
+        solution_error = sqrt(solution_error);
+*/      if (nIters % 1000 == 0) {
+		    printf("Shared: The solution error at step %d is %f\n", nIters, solution_error);
+        }
     }
  
     // Clean up
+    // CPU
     delete[] solution;
-    delete[] residualCpu;
+    // delete[] residualCpu;
+    delete[] solutionErrorCpu;
+    // GPU
     cudaFree(x0Gpu);
     cudaFree(x1Gpu);
     cudaFree(rhsGpu);
+    cudaFree(solutionErrorGpu);
+    cudaFree(solution_exactGpu);
 
     return nIters;
 }
