@@ -1,14 +1,14 @@
 __host__ __device__
-float normFromRow(const float leftX, const float centerX, const float rightX, const float centerRhs, const float dx)
+double normFromRow(const double leftX, const double centerX, const double rightX, const double centerRhs, const double dx)
 {
     return centerRhs + (leftX - 2.0*centerX + rightX) / (dx*dx);
 }
 
-float residual1DPoisson(const float * solution, const float * rhs, int nGrids)
+double residual1DPoisson(const double * solution, const double * rhs, int nGrids)
 {
-    float residual = 0.0;
-    float dx = 1.0 / (nGrids - 1);
-    float leftX, centerX, rightX, residualContributionFromRow;
+    double residual = 0.0;
+    double dx = 1.0 / (nGrids - 1);
+    double leftX, centerX, rightX, residualContributionFromRow;
 
     for (int iGrid = 0; iGrid < nGrids; iGrid++) {
         if (iGrid == 0 || iGrid == nGrids-1) {
@@ -28,10 +28,10 @@ float residual1DPoisson(const float * solution, const float * rhs, int nGrids)
 }
 
 __global__
-void residual1DPoissonGPU(float * residualGpu, const float * solution, const float * rhs, int nGrids)
+void residual1DPoissonGPU(double * residualGpu, const double * solution, const double * rhs, int nGrids)
 {
-    float dx = 1.0 / (nGrids - 1);
-    float leftX, centerX, rightX, residualContributionFromRow;
+    double dx = 1.0 / (nGrids - 1);
+    double leftX, centerX, rightX, residualContributionFromRow;
 
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;

@@ -1,34 +1,69 @@
-void loadSolutionExact(float * solution_exact, std::string SOLUTIONEXACT_FILENAME) 
+void loadSolutionExact(double * solution_exact, std::string SOLUTIONEXACT_FILENAME, const int nGrids) 
 {
-    std::ifstream solution_exact_file(SOLUTIONEXACT_FILE_NAME);
+    std::ifstream solution_exact_file(SOLUTIONEXACT_FILENAME);
     for (int i = 0; i < nGrids; i++) {
         solution_exact_file >> solution_exact[i];
     }
 }
 
-
-float solutionError1DPoisson(const float * solution, const float * solution_exact, int nGrids)
+double solutionError1DPoisson(const double * solution, const double * solution_exact, int nGrids)
 {
-    float solutionError = 0.0;
+    double solution_error = 0.0;
     for (int i =0; i < nGrids; i++) {
-        solutionError = solutionError + (solution_exact[i] - solution[i]) * (solution_exact[i] - solution[i]);
+        solution_error = solution_error + (solution_exact[i] - solution[i]) * (solution_exact[i] - solution[i]);
     }
-    solutionError = sqrt(solutionError)
+    solution_error = sqrt(solution_error);
     
-    return solutionError;
+    return solution_error;
 }
 
 __global__
-float solutionError1DPoissonGPU(float * solutionErrorGpu, const float * solution, const float * solution_exact, int nGrids)
+void solutionError1DPoissonGPU(double * solutionErrorGpu, const double * solution, const double * solution_exact, int nGrids)
 {
-    
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for (int i = index; i < nGrids; i += stride) {
-	solutionErrorGpu[i] = (solution_exact[i] - solution[i]) * (solution_exact[i] - solution[i]);
+	    solutionErrorGpu[i] = (solution_exact[i] - solution[i]) * (solution_exact[i] - solution[i]);
+    }
+    __syncthreads();
+}
+
+/*
+__global__
+void solutionError1DPoissonGPUNorm(double * solutionErrorGpu, const double * solution, const double * solution_exact, int nGrids, double * solution_error)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    for (int i = index; i < nGrids; i += stride) {
+	    solutionErrorGpu[i] = (solution_exact[i] - solution[i]) * (solution_exact[i] - solution[i]);
     }
     __syncthreads();
 
+    *solution_error = 100.0;
+    
+    extern __shared__ double sharedMemory[];
 
+    // Placing error components in shared memory
+    if (index < nGrids) {
+        sharedMemory[threadIdx.x] = solutionErrorGpu[index]
+    }
+    __syncthreads;
+ 
+    // Reduction within shared memory
+    for (int s = blockDim.x/2; s > 0; s = s/2) {
+        if threadIdx.x < s {
+            sharedMemory[threadIdx.x] = sharedMemory[threadIdx.x] + sharedMemory[threadIdx.x + s];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0) {
+        solutionErrorGpu[blockIdx.x] = sharedMemory[0];
+    } 
+
+    __syncthreads();
+      
+
+//    solution_error = atomicAdd(solutionErrorGpu, nGrids);
 }
-
+*/

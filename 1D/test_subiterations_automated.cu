@@ -1,0 +1,193 @@
+#include<utility>
+#include<stdio.h>
+#include<assert.h>
+#include <cuda_runtime_api.h>
+#include <cuda_runtime.h>
+
+#include <ostream>
+#include <iostream>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <fstream>
+#include <omp.h>
+#include <time.h>
+#include <string.h>
+#include <utility>
+#include <time.h>
+
+// HEADER FILES
+#include "Helper/createFileStrings.h"
+#include "Helper/fillThreadsPerBlock.h"
+#include "Helper/jacobi.h"
+#include "Helper/residual.h"
+#include "Helper/solution_error.h"
+#include "Helper/setGPU.h"
+
+// Header file for shared jacobi code
+#include "jacobi-1D-shared.h"
+
+int main(int argc, char *argv[])
+{
+    // INPUTS ///////////////////////////////////////////////////////////////
+    // SET CUDA DEVICE TO USE (IMPORTANT FOR ENDEAVOUR WHICH HAS 2!)
+    // NAVIER-STOKES GPUs: "Quadro K420"
+    // ENDEAVOUR GPUs: "TITAN V" OR "GeForce GTX 1080 Ti"
+    std::string gpuToUse = "TITAN V";
+    setGPU(gpuToUse);
+
+    // PARSE INPUTS
+    const int nDim = atoi(argv[1]);
+    const int residual_convergence_metric_flag = atoi(argv[2]);
+    const int tolerance_value = atoi(argv[3]);
+    const int tolerance_reduction_flag = atoi(argv[4]);
+
+    // DEFAULT PARAMETERS
+    const int numTrials = 20;
+    int threadsPerBlock, innerSubdomainLength;
+    int OVERLAP, SUBITERATIONS;
+
+    // INITIALIZE ARRAYS
+    int nGrids = nDim + 2;
+    double * initX = new double[nGrids];
+    double * rhs = new double[nGrids];
+
+    // 1D POISSON MATRIX
+    for (int iGrid = 0; iGrid < nGrids; ++iGrid) {
+        if (iGrid == 0 || iGrid == nGrids-1) {
+            initX[iGrid] = 0.0f;
+        }
+        else {
+            initX[iGrid] = 1.0f;
+        }
+        rhs[iGrid] = 1.0f;
+    }
+
+    // LOAD EXACT SOLUTION IF SOLUTION ERROR IS THE CRITERION FOR CONVERGENCE
+    double * solution_exact = new double[nGrids];
+    double initSolutionError;
+    if (residual_convergence_metric_flag == 0) {
+        std::string SOLUTIONEXACT_FILENAME = "solution_exact_N32.txt";
+        loadSolutionExact(solution_exact, SOLUTIONEXACT_FILENAME, nGrids);
+        initSolutionError = solutionError1DPoisson(initX, solution_exact, nGrids);
+    }
+
+    // COMPUTE TOLERANCE BASED ON RESIDUAL/ERROR AND INPUTS FROM PYTHON
+    double TOL;
+    double initResidual = residual1DPoisson(initX, rhs, nGrids);
+    if (tolerance_reduction_flag == 0) {
+        TOL = tolerance_value;
+    }
+    else if (tolerance_reduction_flag == 1 && residual_convergence_metric_flag == 1) {
+        TOL = initResidual / tolerance_value;
+    }
+    else if (tolerance_reduction_flag == 1 && residual_convergence_metric_flag == 0) {
+        TOL = initSolutionError / tolerance_value;
+    }
+
+    // THREADS PER BLOCK VALUES
+    int* threadsPerBlock_array = new int[6];
+    fillThreadsPerBlockArray(threadsPerBlock_array);
+
+    // DEFINE CUDA EVENTS
+    cudaEvent_t start_sh, stop_sh;
+    cudaEventCreate(&start_sh);
+    cudaEventCreate(&stop_sh);
+
+    // PRINTOUT
+    // Print parameters of the problem to screen
+    printf("===============INFORMATION============================\n");
+    printf("Number of unknowns: %d\n", nDim);
+    printf("Number of Trials: %d\n", nDim);
+    if (residual_convergence_metric_flag == 1) {
+        printf("Residual of initial solution: %f\n", initResidual);
+    }
+    else if (residual_convergence_metric_flag == 0) {
+        printf("Solution Error of initial solution: %f\n", initSolutionError);
+    }
+    printf("Desired TOL of residual/solution error: %f\n", TOL);
+    printf("======================================================\n");
+
+    int numOverlap, numSubIteration;
+	int index;
+	float sharedJacobiTime;
+	float totalTime = 0.0;
+    std::string SHARED_FILE_NAME;
+    std::ofstream timings_sh;
+    // VARY THE NUMBER OF THREADS PER BLOCK
+	for (int tpb_idx = 0; tpb_idx < 6; tpb_idx = tpb_idx + 1) { 
+		threadsPerBlock = threadsPerBlock_array[tpb_idx];
+        innerSubdomainLength = threadsPerBlock;
+		numOverlap = innerSubdomainLength/4 + 1;
+		numSubIteration = 0;
+		for (int i = innerSubdomainLength/4; i <= 4 * innerSubdomainLength; i = i * 2) {
+			numSubIteration = numSubIteration + 1;
+		}
+		int numIterations = numOverlap * numSubIteration;
+        SHARED_FILE_NAME = createFileStringSubiterations(nDim, threadsPerBlock, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag);
+    	timings_sh.open(SHARED_FILE_NAME.c_str(), std::ios_base::app);
+		int * sharedCycles = new int[numIterations];
+		float * sharedJacobiTimeArray = new float[numIterations];
+		double * sharedJacobiResidual = new double[numIterations];
+		double * sharedJacobiSolutionError = new double[numIterations];
+		double * solutionJacobiShared = new double[nGrids];
+    	// VARY NUMBER OF SUBITERATIONS
+		for (int k = 0; k < numSubIteration; k++) {
+			SUBITERATIONS = (innerSubdomainLength/4) * pow(2, k);
+			// VARY OVERLAP
+			for (int i = 0; i < numOverlap; i++) {
+				// OBTAIN NUMBER OF CYCLES TO CONVERGE FOR GIVEN COMBINATION OF OVERLAP AND SUBITERATIONS
+				OVERLAP = 2*i;
+				index = i + k * numOverlap;
+				if (residual_convergence_metric_flag == 1) {
+					sharedCycles[index] = jacobiSharedIterationCountResidual(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, SUBITERATIONS);
+				}
+				else if (residual_convergence_metric_flag == 0) {
+					sharedCycles[index] = jacobiSharedIterationCountSolutionError(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, SUBITERATIONS, solution_exact);
+				}
+				printf("THREADS PER BLOCK %d: SUBITERATIONS %d/%d, OVERLAP = %d/%d  (N = %d, innerSubdomainLength = %d)\n", threadsPerBlock, SUBITERATIONS, innerSubdomainLength * innerSubdomainLength/2, OVERLAP, innerSubdomainLength/2, nDim, innerSubdomainLength);
+				// PERFORM TRIALS
+				for (int iter = 0; iter < numTrials; iter++) {
+					// GET FINAL SOLUTION
+					cudaEventRecord(start_sh, 0);
+					solutionJacobiShared = jacobiShared(initX, rhs, nGrids, sharedCycles[index], threadsPerBlock, OVERLAP, SUBITERATIONS);
+					// OBTAIN FINAL TIMES REQUIRED
+					cudaEventRecord(stop_sh, 0);
+					cudaEventSynchronize(stop_sh);
+					cudaEventElapsedTime(&sharedJacobiTime, start_sh, stop_sh);
+					totalTime = totalTime + sharedJacobiTime;
+					printf("TRIAL %d/%d\n", iter, numTrials);
+				}
+				sharedJacobiTimeArray[index] = totalTime / numTrials;
+				printf("Number of Cycles: %d (subiterations = %d) \n", sharedCycles[index], SUBITERATIONS);
+            	printf("Time needed for the Jacobi Shared: %f ms\n", sharedJacobiTimeArray[i]);
+				if (residual_convergence_metric_flag == 1) {
+					sharedJacobiResidual[index] = residual1DPoisson(solutionJacobiShared, rhs, nGrids);
+					printf("Residual is %f\n", sharedJacobiResidual[index]);
+					timings_sh << OVERLAP << " " << SUBITERATIONS << " " << sharedCycles[index] << " " << sharedJacobiTimeArray[index] << " " << sharedJacobiResidual[index] << " " << numTrials << " " << "\n";
+				}
+				else if (residual_convergence_metric_flag == 0) {
+					sharedJacobiSolutionError[index] = residual1DPoisson(solutionJacobiShared, rhs, nGrids);
+					printf("Solution Error is %f\n", sharedJacobiSolutionError[index]);
+					timings_sh << OVERLAP << " " << SUBITERATIONS << " " << sharedCycles[index] << " " << sharedJacobiTimeArray[index] << " " << sharedJacobiSolutionError[index] << " " << numTrials << " " << "\n";
+				}
+                printf("================================================\n");
+				totalTime = 0.0;
+			}    
+		}
+		delete[] sharedCycles;
+		delete[] sharedJacobiTimeArray;
+		delete[] sharedJacobiResidual;
+		delete[] sharedJacobiSolutionError;
+		delete[] solutionJacobiShared;
+    	timings_sh.close(); 
+	}
+  
+    // FREE MEMORY
+    delete[] initX;
+    delete[] rhs;
+    delete[] solution_exact;
+    delete[] threadsPerBlock_array;
+    
+    return 0;
+}
