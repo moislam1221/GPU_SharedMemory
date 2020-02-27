@@ -17,67 +17,107 @@
 
 #define PI 3.14159265358979323
 
-float * jacobiCpu(const float * initX, const float * rhs, int nxGrids, int nyGrids,  int nIters)
+double * jacobiCpu(const double * initX, const double * rhs, int nxGrids, int nyGrids,  int nIters)
 {
-    float dx = 1.0 / (nxGrids - 1);
-    float dy = 1.0 / (nyGrids - 1);
+    double dx = 1.0 / (nxGrids - 1);
+    double dy = 1.0 / (nyGrids - 1);
     int nDofs = nxGrids * nyGrids;
-    float * x0 = new float[nDofs];
-    float * x1 = new float[nDofs];
-    memcpy(x0, initX, sizeof(float) * nDofs);
-    memcpy(x1, initX, sizeof(float) * nDofs);
+    double * x0 = new double[nDofs];
+    double * x1 = new double[nDofs];
+    memcpy(x0, initX, sizeof(double) * nDofs);
+    memcpy(x1, initX, sizeof(double) * nDofs);
 
     int dof;
     for (int iIter = 0; iIter < nIters; ++ iIter) {
         for (int jGrid = 1; jGrid < nyGrids-1; ++jGrid) {
 			for (int iGrid = 1; iGrid < nxGrids-1; ++iGrid) {
 		        dof = jGrid * nxGrids + iGrid;
-                float leftX = x0[dof - 1];
-				float rightX = x0[dof + 1];
-                float topX = x0[dof + nxGrids];
-                float bottomX = x0[dof - nxGrids];
+                double leftX = x0[dof - 1];
+				double rightX = x0[dof + 1];
+                double topX = x0[dof + nxGrids];
+                double bottomX = x0[dof - nxGrids];
 				x1[dof] = jacobi2DPoisson(leftX, rightX, topX, bottomX, rhs[dof], dx, dy);
 			}
         }
-        float * tmp = x0; x0 = x1; x1 = tmp;
+        double * tmp = x0; x0 = x1; x1 = tmp;
     }
 
     delete[] x1;
     return x0;
 }
 
-int jacobiCpuIterationCount(const float * initX, const float * rhs, int nxGrids, int nyGrids, float TOL)
+int jacobiCpuIterationCountResidual(const double * initX, const double * rhs, int nxGrids, int nyGrids, double TOL)
 {
-    float dx = 1.0 / (nxGrids - 1);
-    float dy = 1.0 / (nyGrids - 1);
+    double dx = 1.0 / (nxGrids - 1);
+    double dy = 1.0 / (nyGrids - 1);
     int nDofs = nxGrids * nyGrids;
-    float * x0 = new float[nDofs];
-    float * x1 = new float[nDofs];
-    memcpy(x0, initX, sizeof(float) * nDofs);
-    memcpy(x1, initX, sizeof(float) * nDofs);
+    double * x0 = new double[nDofs];
+    double * x1 = new double[nDofs];
+    memcpy(x0, initX, sizeof(double) * nDofs);
+    memcpy(x1, initX, sizeof(double) * nDofs);
 
-    float residual = 1000000000000.0;
+    double residual = 1000000000000.0;
     int iIter = 0;
     int dof;
     while (residual > TOL) {
         for (int jGrid = 1; jGrid < nyGrids-1; ++jGrid) {
 			for (int iGrid = 1; iGrid < nxGrids-1; ++iGrid) {
 		        dof = jGrid * nxGrids + iGrid;
-        		float leftX = x0[dof - 1];
-				float rightX = x0[dof + 1];
-                float topX = x0[dof + nxGrids];
-                float bottomX = x0[dof - nxGrids];
+        		double leftX = x0[dof - 1];
+				double rightX = x0[dof + 1];
+                double topX = x0[dof + nxGrids];
+                double bottomX = x0[dof - nxGrids];
 				x1[dof] = jacobi2DPoisson(leftX, rightX, topX, bottomX, rhs[dof], dx, dy);
 			}
         }
-		float * tmp = x0; x0 = x1; x1 = tmp;
+		double * tmp = x0; x0 = x1; x1 = tmp;
 		iIter++;
 		residual = residual2DPoisson(x0, rhs, nxGrids, nyGrids);
 		if (iIter % 1000 == 0) {
 			printf("CPU: The residual at step %d is %f\n", iIter, residual);
 		}
+
     }
     int nIters = iIter;
+    delete[] x0;
+    delete[] x1;
+    return nIters;
+}
+
+int jacobiCpuIterationCountSolutionError(const double * initX, const double * rhs, int nxGrids, int nyGrids, double TOL, const double * solution_exact)
+{
+    double dx = 1.0 / (nxGrids - 1);
+    double dy = 1.0 / (nyGrids - 1);
+    int nDofs = nxGrids * nyGrids;
+    double * x0 = new double[nDofs];
+    double * x1 = new double[nDofs];
+    memcpy(x0, initX, sizeof(double) * nDofs);
+    memcpy(x1, initX, sizeof(double) * nDofs);
+
+    double solution_error = 1000000000000.0;
+    int iIter = 0;
+    int dof;
+    while (solution_error > TOL) {
+        for (int jGrid = 1; jGrid < nyGrids-1; ++jGrid) {
+			for (int iGrid = 1; iGrid < nxGrids-1; ++iGrid) {
+		        dof = jGrid * nxGrids + iGrid;
+        		double leftX = x0[dof - 1];
+				double rightX = x0[dof + 1];
+                double topX = x0[dof + nxGrids];
+                double bottomX = x0[dof - nxGrids];
+				x1[dof] = jacobi2DPoisson(leftX, rightX, topX, bottomX, rhs[dof], dx, dy);
+			}
+        }
+		double * tmp = x0; x0 = x1; x1 = tmp;
+		iIter++;
+		solution_error = solutionError2DPoisson(x0, solution_exact, nDofs);
+		if (iIter % 1000 == 0) {
+			printf("CPU: The solution error at step %d is %f\n", iIter, solution_error);
+		}
+    }
+    
+    int nIters = iIter;
+    delete[] x0;
     delete[] x1;
     return nIters;
 }
