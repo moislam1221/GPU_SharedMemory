@@ -41,6 +41,7 @@ int main(int argc, char *argv[])
     const int residual_convergence_metric_flag = atoi(argv[2]);
     const int tolerance_value = atoi(argv[3]);
     const int tolerance_reduction_flag = atoi(argv[4]);
+    const int relaxation_flag = 1;
 
     // DEFAULT PARAMETERS
     const int numTrials = 20;
@@ -98,7 +99,7 @@ int main(int argc, char *argv[])
     // Print parameters of the problem to screen
     printf("===============INFORMATION============================\n");
     printf("Number of unknowns: %d\n", nDim);
-    printf("Number of Trials: %d\n", nDim);
+    printf("Number of Trials: %d\n", numTrials);
     if (residual_convergence_metric_flag == 1) {
         printf("Residual of initial solution: %f\n", initResidual);
     }
@@ -124,7 +125,8 @@ int main(int argc, char *argv[])
 			numSubIteration = numSubIteration + 1;
 		}
 		int numIterations = numOverlap * numSubIteration;
-        SHARED_FILE_NAME = createFileStringSubiterations(nDim, threadsPerBlock, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag);
+        SHARED_FILE_NAME = createFileStringSubiterations(nDim, threadsPerBlock, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag, relaxation_flag);
+        std::cout << SHARED_FILE_NAME << std::endl;
     	timings_sh.open(SHARED_FILE_NAME.c_str(), std::ios_base::app);
 		int * sharedCycles = new int[numIterations];
 		float * sharedJacobiTimeArray = new float[numIterations];
@@ -145,7 +147,7 @@ int main(int argc, char *argv[])
 				else if (residual_convergence_metric_flag == 0) {
 					sharedCycles[index] = jacobiSharedIterationCountSolutionError(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, SUBITERATIONS, solution_exact);
 				}
-				printf("THREADS PER BLOCK %d: SUBITERATIONS %d/%d, OVERLAP = %d/%d  (N = %d, innerSubdomainLength = %d)\n", threadsPerBlock, SUBITERATIONS, innerSubdomainLength * innerSubdomainLength/2, OVERLAP, innerSubdomainLength/2, nDim, innerSubdomainLength);
+				printf("THREADS PER BLOCK %d: SUBITERATIONS %d/%d, OVERLAP = %d/%d  (N = %d, innerSubdomainLength = %d)\n", threadsPerBlock, SUBITERATIONS, 4 * innerSubdomainLength, OVERLAP, innerSubdomainLength-2, nDim, innerSubdomainLength);
 				// PERFORM TRIALS
 				for (int iter = 0; iter < numTrials; iter++) {
 					// GET FINAL SOLUTION

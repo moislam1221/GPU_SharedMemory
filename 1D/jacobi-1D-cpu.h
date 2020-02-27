@@ -16,6 +16,7 @@
 #include <utility>
 
 #define PI 3.14159265358979323
+#define RELAXED 1
 
 double * jacobiCpu(const double * initX, const double * rhs, int nGrids, int nIters)
 {
@@ -29,7 +30,13 @@ double * jacobiCpu(const double * initX, const double * rhs, int nGrids, int nIt
         for (int iGrid = 1; iGrid < nGrids-1; ++iGrid) {
             double leftX = x0[iGrid - 1];
             double rightX = x0[iGrid + 1];
+#ifdef RELAXED
+            double centerX = x0[iGrid];
+            x1[iGrid] = jacobiRelaxed1DPoisson(leftX, centerX, rightX, rhs[iGrid], dx);
+#else
             x1[iGrid] = jacobi1DPoisson(leftX, rightX, rhs[iGrid], dx);
+#endif
+
         }
         double * tmp = x0; x0 = x1; x1 = tmp;
     }
@@ -52,7 +59,12 @@ int jacobiCpuIterationCountResidual(const double * initX, const double * rhs, in
         for (int iGrid = 1; iGrid < nGrids-1; ++iGrid) {
             double leftX = x0[iGrid - 1];
             double rightX = x0[iGrid + 1];
+#ifdef RELAXED
+            double centerX = x0[iGrid];
+            x1[iGrid] = jacobiRelaxed1DPoisson(leftX, centerX, rightX, rhs[iGrid], dx);
+#else
             x1[iGrid] = jacobi1DPoisson(leftX, rightX, rhs[iGrid], dx);
+#endif
         }
         double * tmp = x0; x0 = x1; x1 = tmp;
         iIter++;
@@ -82,7 +94,12 @@ int jacobiCpuIterationCountSolutionError(const double * initX, const double * rh
         for (int iGrid = 1; iGrid < nGrids-1; ++iGrid) {
             double leftX = x0[iGrid - 1];
             double rightX = x0[iGrid + 1];
+#ifdef RELAXED
+            double centerX = x0[iGrid];
+            x1[iGrid] = jacobiRelaxed1DPoisson(leftX, centerX, rightX, rhs[iGrid], dx);
+#else
             x1[iGrid] = jacobi1DPoisson(leftX, rightX, rhs[iGrid], dx);
+#endif
         }
         double * tmp = x0; x0 = x1; x1 = tmp;
         iIter++;

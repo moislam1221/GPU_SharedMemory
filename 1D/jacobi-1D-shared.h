@@ -1,4 +1,5 @@
 #define GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST 1
+#define RELAXED 1
 
 __device__
 void __jacobiUpdateKernel(const int nGrids, const int nSub, const int OVERLAP, const int subIterations)
@@ -15,8 +16,13 @@ void __jacobiUpdateKernel(const int nGrids, const int nSub, const int OVERLAP, c
             double leftX = x0[i-1];
             double rightX = x0[i+1];
             double rhs = x2[i];
+#ifdef RELAXED
+            double centerX = x0[i];
+            x1[i] = jacobiRelaxed1DPoisson(leftX, centerX, rightX, rhs, dx);
+#else
             x1[i] = jacobi1DPoisson(leftX, rightX, rhs, dx);
-        }
+#endif        
+		}
         __syncthreads();
         double * tmp = x1; x1 = x0; x0 = tmp;
     }
@@ -160,6 +166,11 @@ int jacobiSharedIterationCountResidual(const double * initX, const double * rhs,
     cudaMemcpy(rhsGpu, rhs, sizeof(double) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(residualGpu, rhs, sizeof(double) * nGrids, cudaMemcpyHostToDevice);
 
+    // Container to hold CPU solution if one wants to compute residual purely on the CPU
+#ifndef GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST
+    double * solution = new double[nGrids];
+#endif
+
     // Define amount of shared memory needed
     const int sharedBytes = 3 * nSub * sizeof(double);
 
@@ -182,7 +193,7 @@ int jacobiSharedIterationCountResidual(const double * initX, const double * rhs,
             double * tmp = x1Gpu; x1Gpu = x0Gpu; x0Gpu = tmp;
         }
         nIters++;
-        
+
         // RESIDUAL
 #ifdef GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST 
 		residual1DPoissonGPU <<<numBlocks, threadsPerBlock>>> (residualGpu, x0Gpu, rhsGpu, nGrids);
@@ -198,14 +209,18 @@ int jacobiSharedIterationCountResidual(const double * initX, const double * rhs,
 		residual = residual1DPoisson(solution, rhs, nGrids);
 #endif
         // Print out the residual
-		if (nIters % 10000 == 0) {
+		if (nIters % 1000 == 0) {
 		    printf("Shared: The residual at step %d is %f\n", nIters, residual);
         }
+
     }
  
     // Free all memory
     // CPU
     delete[] residualCpu;
+#ifndef GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST
+    delete[] solution;
+#endif
     // GPU
     cudaFree(x0Gpu);
     cudaFree(x1Gpu);
@@ -238,7 +253,12 @@ int jacobiSharedIterationCountSolutionError(const double * initX, const double *
     cudaMemcpy(solutionErrorGpu, rhs, sizeof(double) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(solution_exactGpu, solution_exact, sizeof(double) * nGrids, cudaMemcpyHostToDevice);
 
-    // Define amount of shared memory needed
+    // Container to hold CPU solution if one wants to compute residual purely on the CPU
+#ifndef GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST
+    double * solution = new double[nGrids];
+#endif
+
+	// Define amount of shared memory needed
     const int sharedBytes = 3 * nSub * sizeof(double);
 
     // Call kernel to allocate to sharedmemory and update points
@@ -285,6 +305,9 @@ int jacobiSharedIterationCountSolutionError(const double * initX, const double *
     // Clean up
     // CPU
     delete[] solutionErrorCpu;
+#ifndef GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST
+    delete[] solution;
+#endif
     // GPU
     cudaFree(x0Gpu);
     cudaFree(x1Gpu);

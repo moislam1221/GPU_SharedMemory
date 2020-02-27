@@ -39,8 +39,9 @@ int main(int argc, char *argv[])
     // PARSE INPUTS
     const int nDim = atoi(argv[1]);
     const int residual_convergence_metric_flag = atoi(argv[2]);
-    const int tolerance_value = atoi(argv[3]);
+    const double tolerance_value = atof(argv[3]);
     const int tolerance_reduction_flag = atoi(argv[4]);
+    const int relaxation_flag = 1;
 
     // DEFAULT PARAMETERS
     const int numTrials = 20;
@@ -81,7 +82,8 @@ int main(int argc, char *argv[])
         TOL = initResidual / tolerance_value;
     }
     else if (tolerance_reduction_flag == 1 && residual_convergence_metric_flag == 0) {
-        TOL = initSolutionError / tolerance_value;
+        // TOL = initSolutionError / tolerance_value;
+        TOL = (1.0 - 0.01 * tolerance_value) * initSolutionError;
     }
 
     // THREADS PER BLOCK VALUES
@@ -119,7 +121,7 @@ int main(int argc, char *argv[])
         threadsPerBlock = threadsPerBlock_array[tpb_idx];
 		numIterations = threadsPerBlock / 2;
 		subIterations = threadsPerBlock / 2;
-    	SHARED_FILE_NAME = createFileStringOverlap(nDim, threadsPerBlock, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag);
+    	SHARED_FILE_NAME = createFileStringOverlap(nDim, threadsPerBlock, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag, relaxation_flag);
         std::cout << SHARED_FILE_NAME << std::endl;
     	timings_sh.open(SHARED_FILE_NAME.c_str(), std::ios_base::app);
 		int * sharedCycles = new int[numIterations];

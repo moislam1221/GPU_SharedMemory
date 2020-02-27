@@ -16,6 +16,7 @@
 #include <utility>
 
 #define GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST 1
+#define RELAXED 1
 
 __global__
 void _jacobiGpuClassicIteration(double * x1, const double * x0, const double * rhs, const int nGrids, const double dx)
@@ -24,7 +25,12 @@ void _jacobiGpuClassicIteration(double * x1, const double * x0, const double * r
     if (iGrid > 0 && iGrid < nGrids - 1) {
         double leftX = x0[iGrid - 1];
         double rightX = x0[iGrid + 1];
+#ifdef RELAXED
+        double centerX = x0[iGrid];
+        x1[iGrid] = jacobiRelaxed1DPoisson(leftX, centerX, rightX, rhs[iGrid], dx);
+#else
         x1[iGrid] = jacobi1DPoisson(leftX, rightX, rhs[iGrid], dx);
+#endif
     }
     __syncthreads();
 }
@@ -51,9 +57,10 @@ double * jacobiGpu(const double * initX, const double * rhs, const int nGrids, c
 
     for (int iIter = 0; iIter < nIters; ++iIter) {
 	// Jacobi iteration on the GPU
-        _jacobiGpuClassicIteration<<<nBlocks, threadsPerBlock>>>(
-                x1Gpu, x0Gpu, rhsGpu, nGrids, dx); 
-        double * tmp = x0Gpu; x0Gpu = x1Gpu; x1Gpu = tmp;
+        _jacobiGpuClassicIteration<<<nBlocks, threadsPerBlock>>>(x1Gpu, x0Gpu, rhsGpu, nGrids, dx);
+        { 
+        	double * tmp = x0Gpu; x0Gpu = x1Gpu; x1Gpu = tmp;
+		}
     }
 
     // Write solution from GPU to CPU variable
@@ -90,6 +97,11 @@ int jacobiGpuIterationCountResidual(const double * initX, const double * rhs, co
     cudaMemcpy(rhsGpu, rhs, sizeof(double) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(residualGpu, rhs, sizeof(double) * nGrids, cudaMemcpyHostToDevice);
 
+    // Container to hold CPU solution if one wants to compute residual purely on the CPU 
+#ifndef GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST
+	double * solution = new double[nGrids];        
+#endif 
+    
     // Run the classic iteration for prescribed number of iterations
     int nBlocks = (int)ceil(nGrids / (double)threadsPerBlock);
     int iIter = 0;
@@ -130,7 +142,7 @@ int jacobiGpuIterationCountResidual(const double * initX, const double * rhs, co
 		residual = residual1DPoisson(solution, rhs, nGrids);
 #endif
         // Print out the residual
-        if (iIter % 1 == 0) {
+        if (iIter % 1000 == 0) {
 			printf("GPU: The residual at step %d is %f\n", iIter, residual);
         }
 	}
@@ -138,6 +150,9 @@ int jacobiGpuIterationCountResidual(const double * initX, const double * rhs, co
     // Free all memory
     // CPU
     delete[] residualCpu;
+#ifndef GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST
+	delete[] solution;
+#endif 
     // GPU
     cudaFree(x0Gpu);
     cudaFree(x1Gpu);
@@ -171,7 +186,12 @@ int jacobiGpuIterationCountSolutionError(const double * initX, const double * rh
     cudaMemcpy(solutionErrorGpu, rhs, sizeof(double) * nGrids, cudaMemcpyHostToDevice);
     cudaMemcpy(solution_exactGpu, solution_exact, sizeof(double) * nGrids, cudaMemcpyHostToDevice);
 
-    // Run the classic iteration for prescribed number of iterations
+    // Container to hold CPU solution if one wants to compute residual purely on the CPU 
+#ifndef GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST
+	double * solution = new double[nGrids];        
+#endif 
+    
+	// Run the classic iteration for prescribed number of iterations
     int nBlocks = (int)ceil(nGrids / (double)threadsPerBlock);
     int iIter = 0;
     double * solutionErrorCpu = new double[nGrids];
@@ -212,7 +232,9 @@ int jacobiGpuIterationCountSolutionError(const double * initX, const double * rh
     // Free all memory
     // CPU
     delete[] solutionErrorCpu;
-    
+#ifndef GPU_RESIDUAL_SOLUTION_ERROR_CALCULATION_FAST
+	delete[] solution;
+#endif 
     // GPU
     cudaFree(x0Gpu);
     cudaFree(x1Gpu);

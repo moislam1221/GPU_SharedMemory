@@ -49,18 +49,19 @@ int main(int argc, char *argv[])
     // NAVIER-STOKES GPUs: "Quadro K420"
     // ENDEAVOUR GPUs: "TITAN V" OR "GeForce GTX 1080 Ti"
     // Supercloud has V100s that we'll want to use soon
-    // std::string gpuToUse = "Quadro K420"; 
-    // setGPU(gpuToUse);
+    std::string gpuToUse = "TITAN V"; 
+    setGPU(gpuToUse);
     
     // PARSE INPUTS
     const int nDim = atoi(argv[1]); 
     const int residual_convergence_metric_flag = atoi(argv[2]);
-    const int tolerance_value = atoi(argv[3]);
+    const double tolerance_value = atof(argv[3]);
     const int tolerance_reduction_flag = atoi(argv[4]);
+	const int relaxation_flag = 1;
 
     // DEFAULT PARAMETERS FOR ALGORITHM
     const int OVERLAP = 0;
-    const int numTrials = 1;
+    const int numTrials = 20;
     int threadsPerBlock, subIterations;
 
     // INITIALIZE ARRAYS
@@ -83,7 +84,7 @@ int main(int argc, char *argv[])
     double * solution_exact = new double[nGrids];
     double initSolutionError;
     if (residual_convergence_metric_flag == 0) {
-        std::string SOLUTIONEXACT_FILENAME = "solution_exact_N32.txt";
+        std::string SOLUTIONEXACT_FILENAME = "solution_exact_N1048576.txt";
         loadSolutionExact(solution_exact, SOLUTIONEXACT_FILENAME, nGrids);
 	    initSolutionError = solutionError1DPoisson(initX, solution_exact, nGrids);
     }
@@ -98,7 +99,8 @@ int main(int argc, char *argv[])
         TOL = initResidual / tolerance_value;
     }
     else if (tolerance_reduction_flag == 1 && residual_convergence_metric_flag == 0) {
-        TOL = initSolutionError / tolerance_value;
+        // TOL = initSolutionError / tolerance_value;
+        TOL = (1.0 - 0.01 * tolerance_value) * initSolutionError;
     }
 /*
     // CREATE COMPONENTS OF SCRIPT NAMES BASED ON INPUTS
@@ -129,9 +131,13 @@ int main(int argc, char *argv[])
     std::string SHARED_FILE_NAME = SHARED_BASE_NAME + N_STRING + TOL_TYPE_STRING + TOL_VAL_STRING + TXT_STRING;
 */	
     
-    std::string CPU_FILE_NAME = createFileString("CPU", nDim, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag);
-    std::string GPU_FILE_NAME = createFileString("GPU", nDim, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag);
-    std::string SHARED_FILE_NAME = createFileString("SHARED", nDim, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag);
+    std::string CPU_FILE_NAME = createFileString("CPU", nDim, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag, relaxation_flag);
+    std::string GPU_FILE_NAME = createFileString("GPU", nDim, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag, relaxation_flag);
+    std::string SHARED_FILE_NAME = createFileString("SHARED", nDim, residual_convergence_metric_flag, tolerance_value, tolerance_reduction_flag, relaxation_flag);
+
+    std::cout << CPU_FILE_NAME << std::endl;
+    std::cout << GPU_FILE_NAME << std::endl;
+    std::cout << SHARED_FILE_NAME << std::endl;
     
     int * threadsPerBlock_array = new int[6];
     fillThreadsPerBlockArray(threadsPerBlock_array);
@@ -221,7 +227,7 @@ int main(int argc, char *argv[])
             cudaEventRecord(stop, 0);
             cudaEventSynchronize(stop);
             cudaEventElapsedTime(&gpuJacobiTimeTrial, start, stop);
-            printf("Time = %f\n", gpuJacobiTimeTrial);
+            // printf("Time = %f\n", gpuJacobiTimeTrial);
             gputotalTime = gputotalTime + gpuJacobiTimeTrial;
             printf("Threads Per Block = %d: Completed GPU trial %d\n", threadsPerBlock, iter);
         }
@@ -261,7 +267,7 @@ int main(int argc, char *argv[])
     double * solutionJacobiShared = new double[nGrids];
     for (int tpb_idx = 0; tpb_idx < 6; tpb_idx = tpb_idx + 1) {
         threadsPerBlock = threadsPerBlock_array[tpb_idx];
-        subIterations = 1; //threadsPerBlock / 2;
+        subIterations = threadsPerBlock / 2;
         if (residual_convergence_metric_flag == 1) {
             sharedCycles = jacobiSharedIterationCountResidual(initX, rhs, nGrids, TOL, threadsPerBlock, OVERLAP, subIterations);
         }
